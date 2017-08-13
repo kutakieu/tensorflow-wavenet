@@ -12,7 +12,7 @@ import tensorflow as tf
 from pytube import YouTube
 import moviepy.editor as mp
 from PIL import Image
-from vectorise_image import image2vector
+from wavenet import image2vector
 
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
@@ -70,22 +70,31 @@ def load_generic_audio(directory, sample_rate):
 def load_generic_audio_video(directory, sample_rate):
 
     download_youtube(directory)
-
-
-def convert_video2vector(directory, sample_rate):
     clip = mp.VideoFileClip(directory + "/tmp.mp4")
     clip.audio.write_audiofile(directory + "/tmp.wav")
 
-    i2v = image2vector()
+    audio, _ = librosa.load(directory + "/tmp.wav", sr=sample_rate, mono=True)
 
-    sample_size = sample_rate / clip.fps
+    i2v = image2vector([30, 30, 3])
+
+    sample_size = int(sample_rate / clip.fps + 0.5)
 
     # to get frame
-    clip.get_frame(0)
+    # clip.get_frame(0)
     # to get image instance from numpy array
-    img = Image.fromarray(clip.get_frame(0))
-    img.thumbnail([30, 30], Image.ANTIALIAS)
-    return sample_size
+    num_frames = int(clip.duration * clip.fps) - 1
+    for i in range(num_frames):
+        img = Image.fromarray(clip.get_frame(i))
+        img.thumbnail([30, 30], Image.ANTIALIAS)
+
+        image_vector = i2v.convert(img)
+        image_vector = image_vector.reshape(512, 1)
+        image_vectors = np.tile(image_vector, sample_size)
+        # yield a set of data for each frame and corresponding audio data
+        yield audio[i*sample_size : (i+1)*sample_size, :], image_vectors
+
+
+# def convert_video2vector(directory, sample_rate):
 
 
 
@@ -214,7 +223,9 @@ class AudioReader(object):
         # Go through the dataset multiple times
         while not stop:
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
-            for audio, filename, category_id, video_vectors in iterator:
+            # for audio, filename, category_id, video_vectors in iterator:
+            for audio, video_vectors in iterator:
+                self.sample_size = len(audio)
                 if self.coord.should_stop():
                     stop = True
                     break
@@ -247,9 +258,10 @@ class AudioReader(object):
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
-                        if self.gc_enabled:
-                            sess.run(self.gc_enqueue, feed_dict={
-                                self.id_placeholder: category_id})
+                        # gc is not available for now
+                        # if self.gc_enabled:
+                        #     sess.run(self.gc_enqueue, feed_dict={
+                        #         self.id_placeholder: category_id})
                         if self.lc_enabled:
                             sess.run(self.lc_enqueue, feed_dict={
                                 self.lc_placeholder: video_vectors})
@@ -258,9 +270,9 @@ class AudioReader(object):
                 else:
                     sess.run(self.enqueue,
                              feed_dict={self.sample_placeholder: audio})
-                    if self.gc_enabled:
-                        sess.run(self.gc_enqueue,
-                                 feed_dict={self.id_placeholder: category_id})
+                    # if self.gc_enabled:
+                    #     sess.run(self.gc_enqueue,
+                    #              feed_dict={self.id_placeholder: category_id})
 
     def start_threads(self, sess, n_threads=1):
         for _ in range(n_threads):
