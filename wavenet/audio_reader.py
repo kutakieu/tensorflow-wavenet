@@ -3,10 +3,17 @@ import os
 import random
 import re
 import threading
+import subprocess
 
 import librosa
 import numpy as np
 import tensorflow as tf
+
+from pytube import YouTube
+import moviepy.editor as mp
+from PIL import Image
+from vectorise_image import image2vector
+
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
 
@@ -60,6 +67,47 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
+def load_generic_audio_video(directory, sample_rate):
+
+    download_youtube(directory)
+
+
+def convert_video2vector(directory, sample_rate):
+    clip = mp.VideoFileClip(directory + "/tmp.mp4")
+    clip.audio.write_audiofile(directory + "/tmp.wav")
+
+    i2v = image2vector()
+
+    sample_size = sample_rate / clip.fps
+
+    # to get frame
+    clip.get_frame(0)
+    # to get image instance from numpy array
+    img = Image.fromarray(clip.get_frame(0))
+    img.thumbnail([30, 30], Image.ANTIALIAS)
+    return sample_size
+
+
+
+def download_youtube(directory, video_name=None):
+    subprocess.call(["rm", "tmp.wav", "tmp.mp4"])
+
+    video_id = "h6yJEHHT5eA"
+    try:
+        youtube = YouTube("https://www.youtube.com/watch?v=" + video_id)
+        youtube.set_filename('tmp')
+    except:
+        print("there is no video")
+
+    try:
+        video = youtube.get('mp4', '360p')
+    except:
+        print("there is no video for this setting")
+
+    video.download(directory)
+
+
+
 
 def trim_silence(audio, threshold, frame_length=2048):
     '''Removes silence at the beginning and end of a sample.'''
@@ -93,6 +141,7 @@ class AudioReader(object):
                  coord,
                  sample_rate,
                  gc_enabled,
+                 lc_enabled,
                  receptive_field,
                  sample_size=None,
                  silence_threshold=None,
@@ -104,6 +153,7 @@ class AudioReader(object):
         self.receptive_field = receptive_field
         self.silence_threshold = silence_threshold
         self.gc_enabled = gc_enabled
+        self.lc_enabled = lc_enabled
         self.threads = []
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.queue = tf.PaddingFIFOQueue(queue_size,
@@ -116,6 +166,12 @@ class AudioReader(object):
             self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
                                                 shapes=[()])
             self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
+
+        if self.lc_enabled:
+            self.lc_placeholder = tf.placeholder(dtype=tf.int32, shape=())
+            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
+                                                shapes=[(None, 512)])
+            self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
 
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
@@ -150,27 +206,35 @@ class AudioReader(object):
     def dequeue_gc(self, num_elements):
         return self.gc_queue.dequeue_many(num_elements)
 
+    def dequeue_lc(self, num_elements):
+        return self.lc_queue.dequeue_many(num_elements)
+
     def thread_main(self, sess):
         stop = False
         # Go through the dataset multiple times
         while not stop:
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
-            for audio, filename, category_id in iterator:
+            for audio, filename, category_id, video_vectors in iterator:
                 if self.coord.should_stop():
                     stop = True
                     break
-                if self.silence_threshold is not None:
-                    # Remove silence
-                    audio = trim_silence(audio[:, 0], self.silence_threshold)
-                    audio = audio.reshape(-1, 1)
-                    if audio.size == 0:
-                        print("Warning: {} was ignored as it contains only "
-                              "silence. Consider decreasing trim_silence "
-                              "threshold, or adjust volume of the audio."
-                              .format(filename))
+
+                # ignore trim silence for now
+                # if self.silence_threshold is not None:
+                #     # Remove silence
+                #     audio = trim_silence(audio[:, 0], self.silence_threshold)
+                #     audio = audio.reshape(-1, 1)
+                #     if audio.size == 0:
+                #         print("Warning: {} was ignored as it contains only "
+                #               "silence. Consider decreasing trim_silence "
+                #               "threshold, or adjust volume of the audio."
+                #               .format(filename))
 
                 audio = np.pad(audio, [[self.receptive_field, 0], [0, 0]],
                                'constant')
+                # pad the video vector
+                pad = np.zeros((512, self.receptive_field))
+                video_vectors = np.concatenate((pad, video_vectors),axis=1)
 
                 if self.sample_size:
                     # Cut samples into pieces of size receptive_field +
@@ -178,12 +242,19 @@ class AudioReader(object):
                     while len(audio) > self.receptive_field:
                         piece = audio[:(self.receptive_field +
                                         self.sample_size), :]
+                        print("hogehogehoeg")
+                        print(piece.shape)
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
                         if self.gc_enabled:
                             sess.run(self.gc_enqueue, feed_dict={
                                 self.id_placeholder: category_id})
+                        if self.lc_enabled:
+                            sess.run(self.lc_enqueue, feed_dict={
+                                self.lc_placeholder: video_vectors})
+                            # TODO implement here
+
                 else:
                     sess.run(self.enqueue,
                              feed_dict={self.sample_placeholder: audio})

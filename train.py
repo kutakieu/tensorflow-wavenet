@@ -100,6 +100,8 @@ def get_arguments():
                         help='Whether to store histogram summaries. Default: False')
     parser.add_argument('--gc_channels', type=int, default=None,
                         help='Number of global condition channels. Default: None. Expecting: Int')
+    parser.add_argument('--lc_channels', type=int, default=None,
+                        help='Number of local condition channels. Default: None. Expecting: Int')
     parser.add_argument('--max_checkpoints', type=int, default=MAX_TO_KEEP,
                         help='Maximum amount of checkpoints that will be kept alive. Default: '
                              + str(MAX_TO_KEEP) + '.')
@@ -215,11 +217,13 @@ def main():
         silence_threshold = args.silence_threshold if args.silence_threshold > \
                                                       EPSILON else None
         gc_enabled = args.gc_channels is not None
+        lc_enabled = args.lc_channels is not None
         reader = AudioReader(
             args.data_dir,
             coord,
             sample_rate=wavenet_params['sample_rate'],
             gc_enabled=gc_enabled,
+            lc_enabled=lc_enabled,
             receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
                                                                    wavenet_params["dilations"],
                                                                    wavenet_params["scalar_input"],
@@ -246,12 +250,15 @@ def main():
         initial_filter_width=wavenet_params["initial_filter_width"],
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=reader.gc_category_cardinality)
+        global_condition_cardinality=reader.gc_category_cardinality,
+        local_condition_channels=args.lc_channels)
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
     loss = net.loss(input_batch=audio_batch,
                     global_condition_batch=gc_id_batch,
+                    # TODO: implement reader.dequeue_lc(args.batch_size)
+                    # local_condition_batch,
                     l2_regularization_strength=args.l2_regularization_strength)
     optimizer = optimizer_factory[args.optimizer](
                     learning_rate=args.learning_rate,
