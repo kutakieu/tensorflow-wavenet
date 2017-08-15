@@ -57,7 +57,8 @@ class WaveNetModel(object):
                  histograms=False,
                  global_condition_channels=None,
                  global_condition_cardinality=None,
-                 local_condition_channels = None):
+                 local_condition_channels=None,
+                 local_condition_cardinality=None):
         '''Initializes the WaveNet model.
 
         Args:
@@ -110,6 +111,7 @@ class WaveNetModel(object):
         self.global_condition_channels = global_condition_channels
         self.global_condition_cardinality = global_condition_cardinality
         self.local_condition_channels = local_condition_channels
+        self.local_condition_cardinality = local_condition_cardinality
 
         self.receptive_field = WaveNetModel.calculate_receptive_field(
             self.filter_width, self.dilations, self.scalar_input,
@@ -147,6 +149,11 @@ class WaveNetModel(object):
                         'gc_embedding',
                         [self.global_condition_cardinality,
                          self.global_condition_channels])
+                    if self.local_condition_cardinality is not None:
+                        layer['lc_embedding'] = create_embedding_table(
+                            'lc_embedding',
+                            [self.local_condition_cardinality,
+                             self.local_condition_channels])
                     var['embeddings'] = layer
 
             with tf.variable_scope('causal_layer'):
@@ -602,10 +609,54 @@ class WaveNetModel(object):
             embedding = global_condition
 
         if embedding is not None:
+            print(embedding.shape)
+            print(self.batch_size)
+            print(self.global_condition_channels)
             embedding = tf.reshape(
                 embedding,
                 [self.batch_size, 1, self.global_condition_channels])
 
+        return embedding
+
+    # TODO: merge _embed_gc and _embed_lc
+    def _embed_lc(self, local_condition, len):
+        '''Returns embedding for global condition.
+        :param global_condition: Either ID of global condition for
+               tf.nn.embedding_lookup or actual embedding. The latter is
+               experimental.
+        :return: Embedding or None
+        '''
+        embedding = None
+        if self.local_condition_cardinality is not None:
+            # Only lookup the embedding if the global condition is presented
+            # as an integer of mutually-exclusive categories ...
+            embedding_table = self.variables['embeddings']['lc_embedding']
+            embedding = tf.nn.embedding_lookup(embedding_table,
+                                               local_condition)
+        elif local_condition is not None:
+            # ... else the global_condition (if any) is already provided
+            # as an embedding.
+
+            # In this case, the number of global_embedding channels must be
+            # equal to the the last dimension of the global_condition tensor.
+            lc_batch_rank = len(local_condition.get_shape())
+            dims_match = (local_condition.get_shape()[lc_batch_rank - 1] ==
+                          self.local_condition_channels)
+            if not dims_match:
+                raise ValueError('Shape of local_condition {} does not'
+                                 ' match local_condition_channels {}.'.
+                                 format(local_condition.get_shape(),
+                                        self.local_condition_channels))
+            embedding = local_condition
+
+        if embedding is not None:
+            print(embedding.shape)
+            print(self.batch_size)
+            print(self.local_condition_channels)
+            # embedding = tf.reshape(
+            #     embedding,
+            #     # [self.batch_size, 1, self.local_condition_channels])
+            #     [self.batch_size, int(len), self.local_condition_channels])
         return embedding
 
     def predict_proba(self, waveform, global_condition=None, local_condition=None, name='wavenet'):
@@ -621,7 +672,9 @@ class WaveNetModel(object):
                 encoded = self._one_hot(waveform)
 
             gc_embedding = self._embed_gc(global_condition)
-            raw_output = self._create_network(encoded, gc_embedding, local_condition)
+            lc_embedding = self._embed_lc(local_condition)
+
+            raw_output = self._create_network(encoded, gc_embedding, lc_embedding)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
             # Cast to float64 to avoid bug in TensorFlow
             proba = tf.cast(
@@ -673,20 +726,37 @@ class WaveNetModel(object):
                                           self.quantization_channels)
 
             gc_embedding = self._embed_gc(global_condition_batch)
+            lc_embedding = self._embed_lc(local_condition_batch, local_condition_batch.shape[1])
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
                     tf.cast(input_batch, tf.float32),
                     [self.batch_size, -1, 1])
+                lc = network_input = tf.reshape(
+                    tf.cast(lc_embedding, tf.float32),
+                    [self.batch_size, -1, 1])
             else:
                 network_input = encoded
+
+            print("in the loss")
+            print(network_input.shape)
+            print(lc_embedding.shape)
+            # print(lc.shape)
 
             # Cut off the last sample of network input to preserve causality.
             network_input_width = tf.shape(network_input)[1] - 1
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            raw_output = self._create_network(network_input, gc_embedding, local_condition_batch)
+            lc = tf.slice(lc_embedding, [0, 0, 0],
+                                     [-1, network_input_width, -1])
+
+            print("in the loss 2")
+            print(network_input.shape)
+            print(lc_embedding.shape)
+            print(lc.shape)
+
+            raw_output = self._create_network(network_input, gc_embedding, lc)
 
             with tf.name_scope('loss'):
                 # Cut off the samples corresponding to the receptive field

@@ -12,7 +12,7 @@ import tensorflow as tf
 from pytube import YouTube
 import moviepy.editor as mp
 from PIL import Image
-from wavenet import image2vector
+# from wavenet import image2vector
 
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
@@ -253,7 +253,7 @@ class AudioReader(object):
                     while len(audio) > self.receptive_field:
                         piece = audio[:(self.receptive_field +
                                         self.sample_size), :]
-                        print("hogehogehoeg")
+                        # print("hogehogehoeg")
                         print(piece.shape)
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
