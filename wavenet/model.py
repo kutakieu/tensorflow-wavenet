@@ -289,13 +289,30 @@ class WaveNetModel(object):
         are omitted due to the limits of ASCII art.
 
         '''
+
+        # tf.assert_equal(tf.shape(input_batch)[1], tf.shape(local_condition_batch)[1])
+
         variables = self.variables['dilated_stack'][layer_index]
 
         weights_filter = variables['filter']
         weights_gate = variables['gate']
 
+        shape_before = tf.shape(input_batch)[1]
+
         conv_filter = causal_conv(input_batch, weights_filter, dilation)
         conv_gate = causal_conv(input_batch, weights_gate, dilation)
+
+        shape_after = tf.shape(conv_gate)[1]
+
+        # if shape_after != shape_before:
+        #     print("shape is changed")
+
+        # if tf.assert_equal(shape_before, shape_after):
+        #     print("shape is changed")
+        #     print(shape_before)
+        #     print(shape_after)
+
+        # tf.assert_equal(shape_before, shape_after)
 
         if global_condition_batch is not None:
             weights_gc_filter = variables['gc_filtweights']
@@ -312,14 +329,30 @@ class WaveNetModel(object):
                                                  name="gc_gate")
 
         if local_condition_batch is not None:
+            # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
+            # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
+            out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
+            local_condition_batch_filter = tf.slice(local_condition_batch,
+                              [0, 0, 0],
+                              [-1, out_width_filter, -1])
+
             weights_lc_filter = variables['lc_filtweights']
-            conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
+            conv_filter = conv_filter + tf.nn.conv1d(
+                local_condition_batch_filter,
+                                                     # lc_conv_filter,
                                                      weights_lc_filter,
                                                      stride=1,
                                                      padding="SAME",
                                                      name="lc_filter")
+
+            out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
+            local_condition_batch_gate = tf.slice(local_condition_batch,
+                                                  [0, 0, 0],
+                                                  [-1, out_width_gate, -1])
             weights_lc_gate = variables['lc_gateweights']
-            conv_gate = conv_gate + tf.nn.conv1d(local_condition_batch,
+            conv_gate = conv_gate + tf.nn.conv1d(
+                local_condition_batch_gate,
+                                                 # lc_conv_gate,
                                                  weights_lc_gate,
                                                  stride=1,
                                                  padding="SAME",
@@ -364,9 +397,12 @@ class WaveNetModel(object):
                 tf.histogram_summary(layer + '_biases_skip', skip_bias)
 
         input_cut = tf.shape(input_batch)[1] - tf.shape(transformed)[1]
+        # print("next step's input width = ")
+        # print(tf.shape(transformed)[1])
         input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
+        local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
 
-        return skip_contribution, input_batch + transformed
+        return skip_contribution, input_batch + transformed, local_condition_batch
 
     def _generator_conv(self, input_batch, state_batch, weights):
         '''Perform convolution for a single convolutional processing step.'''
@@ -442,6 +478,12 @@ class WaveNetModel(object):
         outputs = []
         current_layer = input_batch
 
+        print("in the create_network")
+        print(input_batch.shape)
+        print(local_condition_batch.shape)
+        print(global_condition_batch.shape)
+
+
         # Pre-process the input with a regular convolution
         if self.scalar_input:
             initial_channels = 1
@@ -450,13 +492,19 @@ class WaveNetModel(object):
 
         current_layer = self._create_causal_layer(current_layer)
 
+        # added to adjust the shape
+        out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
+        local_condition_batch = tf.slice(local_condition_batch,
+                                         [0, 0, 0],
+                                         [-1, out_width, -1])
+
         output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
             for layer_index, dilation in enumerate(self.dilations):
                 with tf.name_scope('layer{}'.format(layer_index)):
-                    output, current_layer = self._create_dilation_layer(
+                    output, current_layer, local_condition_batch = self._create_dilation_layer(
                         current_layer, layer_index, dilation,
                         global_condition_batch, local_condition_batch, output_width)
                     outputs.append(output)
@@ -619,7 +667,7 @@ class WaveNetModel(object):
         return embedding
 
     # TODO: merge _embed_gc and _embed_lc
-    def _embed_lc(self, local_condition, len):
+    def _embed_lc(self, local_condition):
         '''Returns embedding for global condition.
         :param global_condition: Either ID of global condition for
                tf.nn.embedding_lookup or actual embedding. The latter is
@@ -700,7 +748,8 @@ class WaveNetModel(object):
             encoded = tf.one_hot(waveform, self.quantization_channels)
             encoded = tf.reshape(encoded, [-1, self.quantization_channels])
             gc_embedding = self._embed_gc(global_condition)
-            raw_output = self._create_generator(encoded, gc_embedding, local_condition)
+            lc_embedding = self._embed_lc(local_condition)
+            raw_output = self._create_generator(encoded, gc_embedding, lc_embedding)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
             proba = tf.cast(
                 tf.nn.softmax(tf.cast(out, tf.float64)), tf.float32)
@@ -726,7 +775,7 @@ class WaveNetModel(object):
                                           self.quantization_channels)
 
             gc_embedding = self._embed_gc(global_condition_batch)
-            lc_embedding = self._embed_lc(local_condition_batch, local_condition_batch.shape[1])
+            lc_embedding = self._embed_lc(local_condition_batch)
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
@@ -745,18 +794,20 @@ class WaveNetModel(object):
 
             # Cut off the last sample of network input to preserve causality.
             network_input_width = tf.shape(network_input)[1] - 1
+
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            lc = tf.slice(lc_embedding, [0, 0, 0],
+            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
                                      [-1, network_input_width, -1])
+            # lc_embedding = lc_embedding[:,3:,:]
 
             print("in the loss 2")
             print(network_input.shape)
-            print(lc_embedding.shape)
-            print(lc.shape)
+            # print(lc_embedding.shape)
+            # print(lc.shape)
 
-            raw_output = self._create_network(network_input, gc_embedding, lc)
+            raw_output = self._create_network(network_input, gc_embedding, lc_embedding)
 
             with tf.name_scope('loss'):
                 # Cut off the samples corresponding to the receptive field
