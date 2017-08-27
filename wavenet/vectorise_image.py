@@ -148,37 +148,68 @@ class image2vector(object):
             , 3)
 
         with tf.Session(graph=self.graph) as sess:
-            print(self.graph.get_operations())
+            # print(self.graph.get_operations())
             # sess = tf.Session()
             # with sess.as_default():
             #     print(graph.get_operation_by_name("input/x-input"))
             x = self.graph.get_operation_by_name("cnn/input/x-input").outputs[0]
-            print(self.graph.get_operation_by_name("cnn/input/x-input"))
-            print(x)
-            print(bgr.shape)
+            # print(self.graph.get_operation_by_name("cnn/input/x-input"))
+            # print(x)
+            # print(bgr.shape)
             return sess.run(self.cnn, feed_dict={x: bgr})
 
 
 
 def main():
-    img = Image.open("./self.jpg")
+    # img = Image.open("./self.jpg")
+    #
+    # img.thumbnail([224, 224], Image.ANTIALIAS)
+    # img.save("./self_resized.jpg", "JPEG")
+    # img = np.array(img) / 255
+    # print(img.shape)
+    # h, w = img.shape[0], img.shape[1]
+    # print(h)
+    # print(w)
+    # img = img.reshape((1, h, w, 3))
+    # print(img.shape)
+    # print(img.shape[1:])
+    # i2v = image2vector(img.shape[1:])
+    # vector = i2v.convert(img)
+    # print(vector.shape)
+    print("here")
 
-    img.thumbnail([224, 224], Image.ANTIALIAS)
-    img.save("./self_resized.jpg", "JPEG")
+    import moviepy.editor as mp
+    import librosa
+    sample_rate = 16000
+    directory = "."
+
+    clip = mp.VideoFileClip(directory + "/tmp.mp4")
+    # clip.audio.write_audiofile(directory + "/tmp.wav")
+    #
+    # audio, _ = librosa.load(directory + "/tmp.wav", sr=sample_rate, mono=True)
+
+    print("step1")
+    i2v = image2vector([32, 18, 3])
+
+    sample_size = int(sample_rate / clip.fps + 0.5)
+    img = Image.fromarray(clip.get_frame(0))
+    print("step2")
+    print(img.size)
+    img.thumbnail([32, 18], Image.ANTIALIAS)
+    print("step3")
+    print(img.size)
     img = np.array(img) / 255
+    print("step4")
     print(img.shape)
     h, w = img.shape[0], img.shape[1]
-    print(h)
-    print(w)
-    img = img.reshape((1, h, w, 3))
-    print(img.shape)
-    print(img.shape[1:])
-    i2v = image2vector(img.shape[1:])
-    vector = i2v.convert(img)
-    print(vector.shape)
+    img = img.reshape((1, w, h, 3))
+    image_vector = i2v.convert(img)
+    image_vector = image_vector.reshape(512, 1)
+    # image_vectors = np.tile(image_vector, sample_size)
+    print(image_vector.shape)
 
 
-
-
+#
+#
 if __name__ == '__main__':
     main()

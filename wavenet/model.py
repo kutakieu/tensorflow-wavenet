@@ -481,7 +481,7 @@ class WaveNetModel(object):
         print("in the create_network")
         print(input_batch.shape)
         print(local_condition_batch.shape)
-        print(global_condition_batch.shape)
+        # print(global_condition_batch.shape)
 
 
         # Pre-process the input with a regular convolution
@@ -763,7 +763,7 @@ class WaveNetModel(object):
              input_batch,
              global_condition_batch=None,
              local_condition_batch=None,
-             l2_regularization_strength=None,
+             l2_regularization_strength=0.000005,
              name='wavenet'):
         '''Creates a WaveNet network and returns the autoencoding loss.
 

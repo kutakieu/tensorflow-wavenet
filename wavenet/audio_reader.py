@@ -12,7 +12,7 @@ import tensorflow as tf
 from pytube import YouTube
 import moviepy.editor as mp
 from PIL import Image
-# from wavenet import image2vector
+from .vectorise_image import image2vector
 
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
@@ -69,13 +69,13 @@ def load_generic_audio(directory, sample_rate):
 
 def load_generic_audio_video(directory, sample_rate):
 
-    download_youtube(directory)
+    # download_youtube(directory)
     clip = mp.VideoFileClip(directory + "/tmp.mp4")
-    clip.audio.write_audiofile(directory + "/tmp.wav")
+    # clip.audio.write_audiofile(directory + "/tmp.wav")
 
     audio, _ = librosa.load(directory + "/tmp.wav", sr=sample_rate, mono=True)
-
-    i2v = image2vector([30, 30, 3])
+    audio = audio.reshape(-1, 1)
+    i2v = image2vector([32, 18, 3])
 
     sample_size = int(sample_rate / clip.fps + 0.5)
 
@@ -85,13 +85,15 @@ def load_generic_audio_video(directory, sample_rate):
     num_frames = int(clip.duration * clip.fps) - 1
     for i in range(num_frames):
         img = Image.fromarray(clip.get_frame(i))
-        img.thumbnail([30, 30], Image.ANTIALIAS)
-
+        img.thumbnail([32, 18], Image.ANTIALIAS)
+        img = np.array(img) / 255
+        h, w = img.shape[0], img.shape[1]
+        img = img.reshape((1, w, h, 3))
         image_vector = i2v.convert(img)
         image_vector = image_vector.reshape(512, 1)
         image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size, :], image_vectors
+        yield audio[i*sample_size : (i+1)*sample_size], image_vectors
 
 
 # def convert_video2vector(directory, sample_rate):
@@ -177,7 +179,7 @@ class AudioReader(object):
             self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
 
         if self.lc_enabled:
-            self.lc_placeholder = tf.placeholder(dtype=tf.int32, shape=())
+            self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=(None, 512))
             self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
                                                 shapes=[(None, 512)])
             self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
@@ -185,14 +187,18 @@ class AudioReader(object):
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
         # the execution of the script, so we do it in the constructor for now.
-        files = find_files(audio_dir)
-        if not files:
-            raise ValueError("No audio files found in '{}'.".format(audio_dir))
-        if self.gc_enabled and not_all_have_id(files):
-            raise ValueError("Global conditioning is enabled, but file names "
-                             "do not conform to pattern having id.")
-        # Determine the number of mutually-exclusive categories we will
-        # accomodate in our embedding table.
+
+        if audio_dir is not None:
+            files = find_files(audio_dir)
+            """
+            if not files:
+                raise ValueError("No audio files found in '{}'.".format(audio_dir))
+            if self.gc_enabled and not_all_have_id(files):
+                raise ValueError("Global conditioning is enabled, but file names "
+                                 "do not conform to pattern having id.")
+            """
+            # Determine the number of mutually-exclusive categories we will
+            # accomodate in our embedding table.
         if self.gc_enabled:
             _, self.gc_category_cardinality = get_category_cardinality(files)
             # Add one to the largest index to get the number of categories,
@@ -222,7 +228,7 @@ class AudioReader(object):
         stop = False
         # Go through the dataset multiple times
         while not stop:
-            iterator = load_generic_audio(self.audio_dir, self.sample_rate)
+            iterator = load_generic_audio_video(self.audio_dir, self.sample_rate)
             # for audio, filename, category_id, video_vectors in iterator:
             for audio, video_vectors in iterator:
                 self.sample_size = len(audio)
@@ -254,7 +260,7 @@ class AudioReader(object):
                         piece = audio[:(self.receptive_field +
                                         self.sample_size), :]
                         # print("hogehogehoeg")
-                        print(piece.shape)
+                        # print(piece.shape)
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
@@ -263,9 +269,13 @@ class AudioReader(object):
                         #     sess.run(self.gc_enqueue, feed_dict={
                         #         self.id_placeholder: category_id})
                         if self.lc_enabled:
+                            piece = video_vectors[:(self.receptive_field +
+                                            self.sample_size), :]
+                            piece = piece.transpose()
                             sess.run(self.lc_enqueue, feed_dict={
-                                self.lc_placeholder: video_vectors})
+                                self.lc_placeholder: piece})
                             # TODO implement here
+                            video_vectors = video_vectors[self.sample_size:, :]
 
                 else:
                     sess.run(self.enqueue,
@@ -281,3 +291,12 @@ class AudioReader(object):
             thread.start()
             self.threads.append(thread)
         return self.threads
+
+
+def main():
+    print("start download youtube")
+    download_youtube()
+    print("done!")
+
+if __name__ == '__main__':
+    main()
