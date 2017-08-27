@@ -7,9 +7,10 @@ import random
 import os
 import matplotlib.pyplot as plt
 import librosa
+from scipy import signal
 
 from wavenet import (WaveNetModel, time_to_batch, batch_to_time, causal_conv,
-                     optimizer_factory, mu_law_decode)
+                     optimizer_factory, mu_law_decode, image2vector)
 
 NOTES = ['D#3', 'G3', 'A#3']  # e-flat chord
 NOTES_HZ = librosa.note_to_hz(NOTES)
@@ -27,7 +28,7 @@ F2 = 196.00  # G frequency in hz
 F3 = 233.08  # B-flat frequency in hz
 
 
-def make_sine_waves(global_conditioning, local_conditioning=None, randomness=None, noisy=None, batch_size=3):
+def make_sine_waves(global_conditioning, local_conditioning=None, randomness=None, noisy=None, generate_two_waves=None, batch_size=3):
     """Creates a time-series of sinusoidal audio amplitudes."""
     sample_period = 1.0/SAMPLE_RATE_HZ
     times = np.arange(0.0, SAMPLE_DURATION, sample_period)
@@ -46,10 +47,10 @@ def make_sine_waves(global_conditioning, local_conditioning=None, randomness=Non
                                                        2.0 * np.pi * F2)
         amplitudes[2, LEADING_SILENCE:] = 0.4 * np.sin(times *
                                                        2.0 * np.pi * F3)
-        speaker_ids = np.zeros((NUM_SPEAKERS, 1), dtype=np.int)
-        speaker_ids[0, 0] = 0
-        speaker_ids[1, 0] = 1
-        speaker_ids[2, 0] = 2
+        gc = np.zeros((NUM_SPEAKERS, 1), dtype=np.int)
+        gc[0, 0] = 0
+        gc[1, 0] = 1
+        gc[2, 0] = 2
     elif global_conditioning and local_conditioning and not randomness:
         # lc_0 = np.full(len(times), 0)
         # lc_1 = np.full(len(times), 1)
@@ -76,39 +77,54 @@ def make_sine_waves(global_conditioning, local_conditioning=None, randomness=Non
         amplitudes[1, LEADING_SILENCE:] = 0.5 * np.sin(times * 2.0 * np.pi * F2)
         amplitudes[2, LEADING_SILENCE:] = 0.4 * np.sin(times * 2.0 * np.pi * F3)
 
-        speaker_ids = np.zeros((NUM_SPEAKERS, 1), dtype=np.int)
-        speaker_ids[0, 0] = 0
-        speaker_ids[1, 0] = 0
-        speaker_ids[2, 0] = 0
+        gc = np.zeros((NUM_SPEAKERS, 1), dtype=np.int)
+        gc[0, 0] = 0
+        gc[1, 0] = 0
+        gc[2, 0] = 0
 
     elif global_conditioning and local_conditioning and randomness:
 
-        audio, current_lc = make_training_data(noisy)
-        amplitudes = np.zeros((batch_size*10, audio.shape[0]))
-        lc = np.zeros((batch_size*10, current_lc.shape[0]))
-        speaker_ids = np.zeros(batch_size*10)
+        # random.seed(100)
+        # np.random.seed(100)
+        if generate_two_waves:
+            sample_num = 20
+        else:
+            sample_num = 10
+
+        # audio, current_lc, current_gc = make_training_data(noisy)
+        amplitudes = np.zeros((batch_size*sample_num, len(times)))
+        lc = np.zeros((batch_size*sample_num, len(times)))
+        gc = np.zeros(batch_size*sample_num)
 
         # amplitudes[:,0] = audio
         # lc[:,0] = current_lc
         # lc = np.stack(current_lc)
         # speaker_ids = np.stack([0])
-        for i in range(batch_size*10 - 1):
-            audio, current_lc = make_training_data(noisy)
-            amplitudes[i, :] = audio
-            lc[i, :] = current_lc
+        for i in range(batch_size*sample_num):
+            if i < 30:
+                audio, current_lc, current_gc  = make_training_data(noisy)
+                amplitudes[i, :] = audio
+                lc[i, :] = current_lc
+                gc[i] = current_gc
+            else:
+                audio, current_lc, current_gc = make_training_data(noisy, True)
+                amplitudes[i, :] = audio
+                lc[i, :] = current_lc
+                gc[i] = current_gc
             # amplitudes = np.stack(amplitudes, audio)
             # lc = np.stack(lc, current_lc)
             # speaker_ids = np.stack(speaker_ids, [0])
+
 
     else:
         amplitudes = (np.sin(times * 2.0 * np.pi * F1) / 3.0 +
                       np.sin(times * 2.0 * np.pi * F2) / 3.0 +
                       np.sin(times * 2.0 * np.pi * F3) / 3.0)
-        speaker_ids = None
+        gc = None
 
-    return amplitudes, speaker_ids, lc
+    return amplitudes, gc, lc
 
-def make_training_data(noisy=None):
+def make_training_data(noisy=None, wave_type=None):
     sample_period = 1.0 / SAMPLE_RATE_HZ
     times = np.arange(0.0, SAMPLE_DURATION, sample_period)
     # LEADING_SILENCE = random.randint(10, 128)
@@ -118,21 +134,26 @@ def make_training_data(noisy=None):
     amplitude = np.zeros(shape=(len(times)))
     lc = np.zeros(shape=(len(times)))
     note0 = np.zeros(shape=(len(times)))
-    note1 = 0.6 * np.sin(times * 2.0 * np.pi * F1)
-    note2 = 0.5 * np.sin(times * 2.0 * np.pi * F2)
-    note3 = 0.4 * np.sin(times * 2.0 * np.pi * F3)
+    if wave_type is None:
+        note1 = 0.6 * np.sin(times * 2.0 * np.pi * F1)
+        note2 = 0.5 * np.sin(times * 2.0 * np.pi * F2)
+        note3 = 0.4 * np.sin(times * 2.0 * np.pi * F3)
+    else:
+        note1 = 0.6 * signal.sawtooth(times * 2.0 * np.pi * F1)
+        note2 = 0.5 * signal.sawtooth(times * 2.0 * np.pi * F2)
+        note3 = 0.4 * signal.sawtooth(times * 2.0 * np.pi * F3)
     lc_0 = np.full(len(times), 0)
     lc_1 = np.full(len(times), 1)
     lc_2 = np.full(len(times), 2)
     lc_3 = np.full(len(times), 3)
     # amplitudes[0:LEADING_SILENCE] = 0.0
     current_time = 0
-    notes = {0:[note0,lc_0], 1:[note1,lc_1], 2:[note2,lc_2], 3:[note3,lc_3]}
+    notes = {0: [note0, lc_0], 1: [note1, lc_1], 2: [note2, lc_2], 3: [note3, lc_3]}
     while True:
         note = notes[random.randint(0, 3)]
         duration = random.randint(100, 300)
         if noisy is not None:
-            noise = (np.random.rand(duration) * 2 - 1)/10
+            noise = (np.random.rand(duration) * 2 - 1) / 10
         else:
             noise = np.zeros(duration)
         # total += duration
@@ -140,10 +161,12 @@ def make_training_data(noisy=None):
             amplitude[current_time:] = note[0][current_time:] + noise[:len(amplitude[current_time:])]
             lc[current_time:] = note[1][current_time:]
             break
-        amplitude[current_time:current_time+duration] = note[0][current_time:current_time+duration] + noise
-        lc[current_time:current_time+duration] = note[1][current_time:current_time+duration]
+        amplitude[current_time:current_time + duration] = note[0][current_time:current_time + duration] + noise
+        lc[current_time:current_time + duration] = note[1][current_time:current_time + duration]
         current_time += duration
-    return amplitude, lc
+
+    gc = 0 if wave_type is None else 1
+    return amplitude, lc, gc
 
 
 def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
@@ -154,6 +177,7 @@ def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
     if fast_generation:
         for sample in waveform[:-1]:
             feed_dict = {samples_placeholder: [sample]}
+            feed_dict[gc_placeholder] = gc if gc is not None else None
             feed_dict[lc_placeholder] = [0] if lc is not None else None
             sess.run(operations, feed_dict)
 
@@ -205,7 +229,7 @@ def generate_waveforms(sess, net, fast_generation, global_condition, local_condi
 
     if fast_generation:
         next_sample_probs = net.predict_proba_incremental(samples_placeholder,
-                                                          global_condition, lc_placeholder)
+                                                          gc_placeholder, lc_placeholder)
         sess.run(net.init_ops)
         operations = [next_sample_probs]
         operations.extend(net.push_ops)
@@ -348,31 +372,57 @@ class TestNet(tf.test.TestCase):
 
 
     def testEndToEndTraining(self):
-        def CreateTrainingFeedDict(audio, speaker_ids, lc, audio_placeholder,
+        def shuffle_row(audio, gc, lc):
+            from copy import deepcopy
+            for i in range(10):
+                index1 = random.randint(0, audio.shape[0] - 1)
+                index2 = random.randint(0, audio.shape[0] - 1)
+                audio1 = deepcopy(audio[index1, :])
+                audio2 = deepcopy(audio[index2, :])
+                audio[index1, :] = audio2
+                audio[index2, :] = audio1
+                lc1 = deepcopy(lc[index1, :])
+                lc2 = deepcopy(lc[index2, :])
+                lc[index1, :] = lc2
+                lc[index2, :] = lc1
+                gc1 = deepcopy(gc[index1])
+                gc2 = deepcopy(gc[index2])
+                gc[index1] = gc2
+                gc[index2] = gc1
+            return audio, gc, lc
+
+        def CreateTrainingFeedDict(audio, gc, lc, audio_placeholder,
                                    gc_placeholder, lc_placeholder, i):
             speaker_index = 0
-            i = i % int(audio.shape[0]/self.net.batch_size)
-            audio = audio[i*self.net.batch_size:(i+1)*self.net.batch_size]
-            speaker_ids = speaker_ids[i*self.net.batch_size:(i+1)*self.net.batch_size]
-            lc = lc[i*self.net.batch_size:(i+1)*self.net.batch_size]
 
-            if speaker_ids is None:
+            i = i % int(audio.shape[0]/self.net.batch_size)
+            if i==0:
+                audio, gc, lc = shuffle_row(audio, gc, lc)
+            _audio = audio[i*self.net.batch_size:(i+1)*self.net.batch_size]
+            _gc = gc[i*self.net.batch_size:(i+1)*self.net.batch_size]
+            _lc = lc[i*self.net.batch_size:(i+1)*self.net.batch_size]
+
+            if gc is None:
                 # No global conditioning.
-                feed_dict = {audio_placeholder: audio}
+                feed_dict = {audio_placeholder: _audio}
             elif self.global_conditioning and not self.local_conditioning:
-                feed_dict = {audio_placeholder: audio,
-                             gc_placeholder: speaker_ids}
+                feed_dict = {audio_placeholder: _audio,
+                             gc_placeholder: _gc}
             elif not self.global_conditioning and self.local_conditioning:
-                feed_dict = {audio_placeholder: audio,
-                             lc_placeholder: lc}
+                feed_dict = {audio_placeholder: _audio,
+                             lc_placeholder: _lc}
             elif self.global_conditioning and self.local_conditioning:
-                feed_dict = {audio_placeholder: audio,
-                             gc_placeholder: speaker_ids,
-                             lc_placeholder: lc}
-            return feed_dict, speaker_index
+                feed_dict = {audio_placeholder: _audio,
+                             gc_placeholder: _gc,
+                             lc_placeholder: _lc}
+            return feed_dict, speaker_index, audio, gc, lc
 
         np.random.seed(42)
-        audio, speaker_ids, lc = make_sine_waves(self.global_conditioning, self.local_conditioning, self.training_data_random, self.training_data_noisy)
+        audio, gc, lc = make_sine_waves(self.global_conditioning, self.local_conditioning, self.training_data_random, self.training_data_noisy, self.generate_two_waves)
+        print("shape check 1")
+        print(audio.shape)
+        print(gc.shape)
+        print(lc.shape)
         # Pad with 0s (silence) times size of the receptive field minus one,
         # because the first sample of the training data is 0 and if the network
         # learns to predict silence based on silence, it will generate only
@@ -413,17 +463,17 @@ class TestNet(tf.test.TestCase):
         initial_loss = None
         operations = [loss, optim]
         with self.test_session() as sess:
-            feed_dict, speaker_index = CreateTrainingFeedDict(
-                audio, speaker_ids, lc, audio_placeholder, gc_placeholder, lc_placeholder, 0)
+            feed_dict, speaker_index, audio, gc, lc  = CreateTrainingFeedDict(
+                audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, 0)
             sess.run(init)
-            print("here")
+            print("shape check 2")
             print(audio.shape)
             print(lc.shape)
-            print(speaker_ids.shape)
+            print(gc.shape)
             initial_loss = sess.run(loss, feed_dict=feed_dict)
             for i in range(self.train_iters):
-                feed_dict, speaker_index = CreateTrainingFeedDict(
-                    audio, speaker_ids, lc, audio_placeholder, gc_placeholder, lc_placeholder, i)
+                feed_dict, speaker_index, audio, gc, lc = CreateTrainingFeedDict(
+                    audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, i)
                 [results] = sess.run([operations], feed_dict=feed_dict)
                 if i % 100 == 0:
                     print("i: %d loss: %f" % (i, results[0]))
@@ -457,13 +507,22 @@ class TestNet(tf.test.TestCase):
                     lc_2 = np.full(int(GENERATE_SAMPLES / 3), 3)
                     lc = np.concatenate((lc_0, lc_1, lc_2))
                     # Check non-fast-generated waveform.
-                    generated_waveforms, ids = generate_waveforms(
-                        # sess, self.net, True, speaker_ids)
-                        sess, self.net, True, np.array((0,)), lc)
+                    if self.generate_two_waves:
+                        generated_waveforms, ids = generate_waveforms(
+                            sess, self.net, True, np.array((0,1)), lc)
+                    else:
+                        generated_waveforms, ids = generate_waveforms(
+                            sess, self.net, True, np.array((0,)), lc)
                     for (waveform, id) in zip(generated_waveforms, ids):
                         # check_waveform(self.assertGreater, waveform, id[0])
-                        plot_waveform(waveform)
-                        plot_waveform4eachLC(waveform, lc)
+                        if id==0:
+                            np.save("../data/wave", waveform)
+                            np.save("../data/lc", lc)
+                            # plot_waveform(waveform)
+                        else:
+                            np.save("../data/wave_t", waveform)
+                            # np.save("../data/lc", lc)
+                        # plot_waveform4eachLC(waveform, lc)
                         # check_waveform(self.assertGreater, waveform, id)
 
                     # Check fast-generated wveform.
@@ -591,9 +650,11 @@ class TestNetWithLocalConditioning(TestNet):
         self.momentum = MOMENTUM
         self.global_conditioning = True
         self.local_conditioning = True
-        self.training_data_random = False
+        self.training_data_random = True
         self.training_data_noisy = False
-        self.train_iters = 400
+        self.generate_two_waves = False
+
+        self.train_iters = 401
 
 
         self.net = WaveNetModel(batch_size=NUM_SPEAKERS,
