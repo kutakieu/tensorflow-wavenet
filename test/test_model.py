@@ -168,18 +168,172 @@ def make_training_data(noisy=None, wave_type=None):
     gc = 0 if wave_type is None else 1
     return amplitude, lc, gc
 
+def check_logits(sess, net, global_condition, local_condition):
+    samples_placeholder = tf.placeholder(tf.int32)
+    gc_placeholder = tf.placeholder(tf.int32) if global_condition is not None \
+        else None
+    lc_placeholder = tf.placeholder(tf.int32) if local_condition is not None \
+        else None
+
+    net.batch_size = 1
+    fixed_wave = np.random.rand(GENERATE_SAMPLES) * 2 - 1
+
+
+    """slow generation"""
+    next_sample_probs = net.predict_proba(samples_placeholder,
+                                          gc_placeholder, lc_placeholder, isTest=True)
+    operations = [next_sample_probs]
+    logits_slow = [None]
+    logits_slow = gen_logits(
+        sess, net, False, global_condition, local_condition, samples_placeholder,
+        gc_placeholder, lc_placeholder, operations, fixed_wave)
+
+    """fast generation"""
+    next_sample_probs = net.predict_proba_incremental(samples_placeholder,
+                                                      gc_placeholder, lc_placeholder, isTest=True)
+    sess.run(net.init_ops)
+    operations = [next_sample_probs]
+    operations.extend(net.push_ops)
+    logits_fast = [None]
+    logits_fast = gen_logits(
+        sess, net, True, global_condition, local_condition, samples_placeholder,
+        gc_placeholder, lc_placeholder, operations, fixed_wave)
+
+    # return proba_fast, logits_fast, proba_slow, logits_slow
+    return logits_fast, logits_slow
+
+def compare_logits(sess, net, gc, lc):
+    logits_fast = []
+    logits_slow = []
+    samples_placeholder = tf.placeholder(tf.int32)
+    gc_placeholder = tf.placeholder(tf.int32)
+    lc_placeholder = tf.placeholder(tf.int32)
+
+    net.batch_size = 1
+
+    fixed_wave = np.random.rand(GENERATE_SAMPLES) * 2 - 1
+
+    operation_fast = net.predict_proba_incremental(samples_placeholder,
+                                                   gc_placeholder, lc_placeholder, isTest=True)
+    operation_slow = net.predict_proba(samples_placeholder,
+                                          gc_placeholder, lc_placeholder, isTest=True)
+
+    initial_waveform = [128] * net.receptive_field
+
+    print("step1")
+
+    """ fast generation preparation """
+    for sample in initial_waveform[:-1]:
+        print("here")
+        feed_dict_fast = {samples_placeholder: [sample]}
+        feed_dict_fast[gc_placeholder] = gc
+        feed_dict_fast[lc_placeholder] = [0]
+        sess.run(operation_fast, feed_dict=feed_dict_fast)
+
+    print("step2")
+
+    for i in range(GENERATE_SAMPLES):
+        if i % 100 == 0:
+            print("Generating {} of {}.".format(i, GENERATE_SAMPLES))
+            sys.stdout.flush()
+
+        current_lc = lc[i]
+
+        """ fast generation """
+        if i == 0:
+            window_fast = initial_waveform[-1]
+        else:
+            window_fast = fixed_wave[i-1]
+        feed_dict_fast = {samples_placeholder: window_fast, lc_placeholder: current_lc, gc_placeholder: gc}
+        logit_fast = sess.run(operation_fast, feed_dict=feed_dict_fast)
+
+        """ slow generation """
+        if i == 0:
+            window_slow = initial_waveform
+        else:
+            window_slow = window_slow[1:]
+            window_slow.append(fixed_wave[i - 1])
+        feed_dict_slow = {samples_placeholder: window_slow, lc_placeholder: current_lc, gc_placeholder: gc}
+        logit_slow = sess.run(operation_slow, feed_dict=feed_dict_slow)
+
+        np.save("../data/logit_fast", logits_fast)
+        np.save("../data/logit_slow", logits_slow)
+        print("finished checking")
+        exit()
+        logits_fast.append(logit_fast)
+        logits_slow.append(logit_slow)
+
+        # sample = np.random.choice(
+        #     np.arange(QUANTIZATION_CHANNELS), p=proba[0])
+        # waveform.append(sample)
+
+
+def gen_logits(sess, net, fast_generation, gc, lc, samples_placeholder,
+                      gc_placeholder, lc_placeholder, operations, fixed_wave):
+
+    logits = []
+    waveform = []
+    initial_waveform = [128] * net.receptive_field
+
+    # initial_lc = [0] * net.receptive_field if lc is not None else None
+    if fast_generation:
+        for sample in initial_waveform[:-1]:
+            feed_dict = {samples_placeholder: [sample]}
+            feed_dict[gc_placeholder] = gc if gc is not None else None
+            feed_dict[lc_placeholder] = [1] if lc is not None else None
+            sess.run(operations, feed_dict)
+
+    for i in range(GENERATE_SAMPLES):
+        if i % 100 == 0:
+            print("Generating {} of {}.".format(i, GENERATE_SAMPLES))
+            sys.stdout.flush()
+        if fast_generation:
+            if i == 0:
+                window = initial_waveform[-1]
+            else:
+                window = fixed_wave[i-1]
+        else:
+            if i == 0:
+                window = initial_waveform
+            else:
+                window = window[1:]
+                window.append(fixed_wave[i - 1])
+
+        current_lc = lc[i] if lc is not None else None
+        # Run the WaveNet to predict the next sample.
+        feed_dict = {samples_placeholder: window, lc_placeholder: current_lc}
+        if gc is not None:
+            feed_dict[gc_placeholder] = gc
+
+        logit = sess.run(operations, feed_dict=feed_dict)
+
+        logits.append(logit)
+        # sample = np.random.choice(
+        #     np.arange(QUANTIZATION_CHANNELS), p=proba[0])
+        # waveform.append(sample)
+    # print("logit shape")
+    # print(logit.shape)
+
+    # return waveform, logits
+    return logits
+
 
 def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
-                      gc_placeholder, lc_placeholder, operations):
+                      gc_placeholder, lc_placeholder, operations, test=False, fixed_wave=None):
+    if test:
+        logits = []
+
     waveform = [128] * net.receptive_field
 
-    initial_lc = [0] * net.receptive_field if lc is not None else None
+    # initial_lc = [0] * net.receptive_field if lc is not None else None
     if fast_generation:
         for sample in waveform[:-1]:
             feed_dict = {samples_placeholder: [sample]}
             feed_dict[gc_placeholder] = gc if gc is not None else None
             feed_dict[lc_placeholder] = [0] if lc is not None else None
             sess.run(operations, feed_dict)
+            if fixed_wave is not None:
+                np.insert(fixed_wave,0,0)
 
     for i in range(GENERATE_SAMPLES):
         if i % 100 == 0:
@@ -191,33 +345,45 @@ def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
         else:
             if len(waveform) > net.receptive_field:
                 window = waveform[-net.receptive_field:]
-                current_lc = lc[-net.receptive_field:] if lc is not None else None
+                current_lc = lc[i] if lc is not None else None
             else:
                 window = waveform
-                current_lc = initial_lc if lc is not None else None
+                # current_lc = initial_lc if lc is not None else None
+                current_lc = lc[i] if lc is not None else None
+            # current_lc = current_lc.reshape((1,))
+            print("current lc")
+            print(current_lc.shape)
+            print(gc.shape)
 
         # Run the WaveNet to predict the next sample.
         feed_dict = {samples_placeholder: window, lc_placeholder: current_lc}
         if gc is not None:
             feed_dict[gc_placeholder] = gc
+
         # if lc is not None:
         #     feed_dict[lc_placeholder] = current_lc
         results = sess.run(operations, feed_dict=feed_dict)
 
-        sample = np.random.choice(
-           np.arange(QUANTIZATION_CHANNELS), p=results[0])
-        waveform.append(sample)
+        if test:
+            logits.append(results)
+        else:
+            sample = np.random.choice(
+               np.arange(QUANTIZATION_CHANNELS), p=results[0])
+            waveform.append(sample)
 
     # Skip the first number of samples equal to the size of the receptive
     # field minus one.
-    waveform = np.array(waveform[net.receptive_field - 1:])
-    decode = mu_law_decode(samples_placeholder, QUANTIZATION_CHANNELS)
-    decoded_waveform = sess.run(decode,
-                                feed_dict={samples_placeholder: waveform})
-    return decoded_waveform
+    if test:
+        return logits
+    else:
+        waveform = np.array(waveform[net.receptive_field - 1:])
+        decode = mu_law_decode(samples_placeholder, QUANTIZATION_CHANNELS)
+        decoded_waveform = sess.run(decode,
+                                    feed_dict={samples_placeholder: waveform})
+        return decoded_waveform
 
 
-def generate_waveforms(sess, net, fast_generation, global_condition, local_condition):
+def generate_waveforms(sess, net, fast_generation, global_condition, local_condition, test=False):
     samples_placeholder = tf.placeholder(tf.int32)
     gc_placeholder = tf.placeholder(tf.int32) if global_condition is not None \
         else None
@@ -235,7 +401,7 @@ def generate_waveforms(sess, net, fast_generation, global_condition, local_condi
         operations.extend(net.push_ops)
     else:
         next_sample_probs = net.predict_proba(samples_placeholder,
-                                              gc_placeholder)
+                                              gc_placeholder, lc_placeholder)
         operations = [next_sample_probs]
 
     num_waveforms = 1 if global_condition is None else  \
@@ -470,6 +636,9 @@ class TestNet(tf.test.TestCase):
             print(audio.shape)
             print(lc.shape)
             print(gc.shape)
+            print(feed_dict[audio_placeholder].shape)
+            print(feed_dict[gc_placeholder].shape)
+            print(feed_dict[lc_placeholder].shape)
             initial_loss = sess.run(loss, feed_dict=feed_dict)
             for i in range(self.train_iters):
                 feed_dict, speaker_index, audio, gc, lc = CreateTrainingFeedDict(
@@ -490,6 +659,7 @@ class TestNet(tf.test.TestCase):
             # than before training.
             # self.assertLess(loss_val / initial_loss, 0.02)
 
+
             if self.generate:
                 # self._save_net(sess)
                 if self.global_conditioning and not self.local_conditioning:
@@ -506,6 +676,18 @@ class TestNet(tf.test.TestCase):
                     lc_1 = np.full(int(GENERATE_SAMPLES / 3), 2)
                     lc_2 = np.full(int(GENERATE_SAMPLES / 3), 3)
                     lc = np.concatenate((lc_0, lc_1, lc_2))
+                    lc = lc.reshape((lc.shape[0],1))
+                    print(lc.shape)
+                    """ * test * """
+                    test = True
+                    if test:
+                        # compare_logits(sess, self.net, np.array((0,)), lc)
+                        logits_fast, logits_slow = check_logits(sess, self.net, np.array((0,)), lc)
+                        np.save("../data/logits_fast", logits_fast)
+                        np.save("../data/logits_slow", logits_slow)
+                        # np.save("../data/proba_fast", proba_fast)
+                        # np.save("../data/proba_slow", proba_slow)
+                        exit()
                     # Check non-fast-generated waveform.
                     if self.generate_two_waves:
                         generated_waveforms, ids = generate_waveforms(
@@ -654,10 +836,10 @@ class TestNetWithLocalConditioning(TestNet):
         self.training_data_noisy = False
         self.generate_two_waves = False
 
-        self.train_iters = 401
+        self.train_iters = 11
 
 
-        self.net = WaveNetModel(batch_size=NUM_SPEAKERS,
+        self.net = WaveNetModel(batch_size=1,
                                 dilations=[1, 2, 4, 8, 16, 32, 64,
                                            1, 2, 4, 8, 16, 32, 64],
                                 filter_width=2,

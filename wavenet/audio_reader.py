@@ -67,15 +67,18 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
-def load_generic_audio_video(directory, sample_rate):
+def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 
-    # download_youtube(directory)
+    # create or load a list of youtube videos (URL)
+    # this function gets called every time the model runs out the given training data
+    current_video = video_list[int(video_index % len(video_list))]
+    download_youtube(directory, video_name=current_video)
     clip = mp.VideoFileClip(directory + "/tmp.mp4")
-    # clip.audio.write_audiofile(directory + "/tmp.wav")
+    clip.audio.write_audiofile(directory + "/tmp.wav")
 
     audio, _ = librosa.load(directory + "/tmp.wav", sr=sample_rate, mono=True)
     audio = audio.reshape(-1, 1)
-    i2v = image2vector([32, 18, 3])
+    # i2v = image2vector([32, 18, 3])
 
     sample_size = int(sample_rate / clip.fps + 0.5)
 
@@ -95,17 +98,12 @@ def load_generic_audio_video(directory, sample_rate):
         # yield a set of data for each frame and corresponding audio data
         yield audio[i*sample_size : (i+1)*sample_size], image_vectors
 
-
-# def convert_video2vector(directory, sample_rate):
-
-
-
 def download_youtube(directory, video_name=None):
     subprocess.call(["rm", "tmp.wav", "tmp.mp4"])
 
-    video_id = "h6yJEHHT5eA"
+    # video_id = "h6yJEHHT5eA"
     try:
-        youtube = YouTube("https://www.youtube.com/watch?v=" + video_id)
+        youtube = YouTube(video_name)
         youtube.set_filename('tmp')
     except:
         print("there is no video")
@@ -184,6 +182,8 @@ class AudioReader(object):
                                                 shapes=[(None, 512)])
             self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
 
+            self.i2v = image2vector([32, 18, 3])
+
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
         # the execution of the script, so we do it in the constructor for now.
@@ -227,8 +227,13 @@ class AudioReader(object):
     def thread_main(self, sess):
         stop = False
         # Go through the dataset multiple times
+        file_name = "video_list.txt"
+        video_list_file = open(file_name, "r")
+        video_list = video_list_file.readlines()
+        video_index = 0
         while not stop:
-            iterator = load_generic_audio_video(self.audio_dir, self.sample_rate)
+            iterator = load_generic_audio_video(self.audio_dir, self.sample_rate, self.i2v, video_list, video_index)
+            video_index += 1
             # for audio, filename, category_id, video_vectors in iterator:
             for audio, video_vectors in iterator:
                 self.sample_size = len(audio)
@@ -274,7 +279,7 @@ class AudioReader(object):
                             piece = piece.transpose()
                             sess.run(self.lc_enqueue, feed_dict={
                                 self.lc_placeholder: piece})
-                            # TODO implement here
+
                             video_vectors = video_vectors[self.sample_size:, :]
 
                 else:

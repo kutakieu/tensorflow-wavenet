@@ -20,15 +20,17 @@ from tensorflow.python.client import timeline
 from wavenet import WaveNetModel, AudioReader, optimizer_factory
 
 BATCH_SIZE = 1
-DATA_DIRECTORY = './VCTK-Corpus'
+# DATA_DIRECTORY = './VCTK-Corpus'
+DATA_DIRECTORY = "."
 LOGDIR_ROOT = './logdir'
-CHECKPOINT_EVERY = 50
-NUM_STEPS = int(1e5)
+CHECKPOINT_EVERY = 500
+# NUM_STEPS = int(1e5)
+NUM_STEPS = int(1e4)
 LEARNING_RATE = 1e-3
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 SAMPLE_SIZE = 100000
-L2_REGULARIZATION_STRENGTH = 0
+L2_REGULARIZATION_STRENGTH = 0.00005
 SILENCE_THRESHOLD = 0.3
 EPSILON = 0.001
 MOMENTUM = 0.9
@@ -236,6 +238,11 @@ def main():
         else:
             gc_id_batch = None
 
+        if lc_enabled:
+            lc_id_batch = reader.dequeue_lc(args.batch_size)
+        else:
+            lc_id_batch = None
+
     # Create network.
     net = WaveNetModel(
         batch_size=args.batch_size,
@@ -257,8 +264,7 @@ def main():
         args.l2_regularization_strength = None
     loss = net.loss(input_batch=audio_batch,
                     global_condition_batch=gc_id_batch,
-                    # TODO: implement reader.dequeue_lc(args.batch_size)
-                    # local_condition_batch,
+                    local_condition_batch = lc_id_batch,
                     l2_regularization_strength=args.l2_regularization_strength)
     optimizer = optimizer_factory[args.optimizer](
                     learning_rate=args.learning_rate,
@@ -301,7 +307,7 @@ def main():
     try:
         for step in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
-            if args.store_metadata and step % 50 == 0:
+            if args.store_metadata and step % 500 == 0:
                 # Slow run that stores extra information for debugging.
                 print('Storing metadata')
                 run_options = tf.RunOptions(

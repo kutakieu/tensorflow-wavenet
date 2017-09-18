@@ -262,7 +262,7 @@ class WaveNetModel(object):
             return causal_conv(input_batch, weights_filter, 1)
 
     def _create_dilation_layer(self, input_batch, layer_index, dilation,
-                               global_condition_batch, local_condition_batch, output_width):
+                               global_condition_batch, local_condition_batch, output_width, isGeneration):
         '''Creates a single causal dilated convolution layer.
 
         Args:
@@ -331,27 +331,39 @@ class WaveNetModel(object):
         if local_condition_batch is not None:
             # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
             # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
-            out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
-            local_condition_batch_filter = tf.slice(local_condition_batch,
-                              [0, 0, 0],
-                              [-1, out_width_filter, -1])
+            if isGeneration:
+                local_condition_batch_filter = tf.reshape(
+                    local_condition_batch,
+                    [self.batch_size, 1, self.local_condition_channels])
+            else:
+                out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
+                local_condition_batch_filter = tf.slice(local_condition_batch,
+                                                        [0, 0, 0],
+                                                        [-1, out_width_filter, -1])
 
             weights_lc_filter = variables['lc_filtweights']
             conv_filter = conv_filter + tf.nn.conv1d(
-                local_condition_batch_filter,
+                                                     local_condition_batch_filter,
                                                      # lc_conv_filter,
                                                      weights_lc_filter,
                                                      stride=1,
                                                      padding="SAME",
                                                      name="lc_filter")
 
-            out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
-            local_condition_batch_gate = tf.slice(local_condition_batch,
-                                                  [0, 0, 0],
-                                                  [-1, out_width_gate, -1])
+            if isGeneration:
+                 local_condition_batch_gate = tf.reshape(
+                    local_condition_batch,
+                    [self.batch_size, 1, self.local_condition_channels])
+            else:
+                out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
+                local_condition_batch_gate = tf.slice(local_condition_batch,
+                                                      [0, 0, 0],
+                                                      [-1, out_width_gate, -1])
+
+
             weights_lc_gate = variables['lc_gateweights']
             conv_gate = conv_gate + tf.nn.conv1d(
-                local_condition_batch_gate,
+                                                 local_condition_batch_gate,
                                                  # lc_conv_gate,
                                                  weights_lc_gate,
                                                  stride=1,
@@ -400,7 +412,8 @@ class WaveNetModel(object):
         # print("next step's input width = ")
         # print(tf.shape(transformed)[1])
         input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
-        local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
+        if not isGeneration:
+            local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
 
         return skip_contribution, input_batch + transformed, local_condition_batch
 
@@ -473,7 +486,7 @@ class WaveNetModel(object):
 
         return skip_contribution, input_batch + transformed
 
-    def _create_network(self, input_batch, global_condition_batch, local_condition_batch):
+    def _create_network(self, input_batch, global_condition_batch, local_condition_batch, isGeneration=False):
         '''Construct the WaveNet network.'''
         outputs = []
         current_layer = input_batch
@@ -493,12 +506,15 @@ class WaveNetModel(object):
         current_layer = self._create_causal_layer(current_layer)
 
         # added to adjust the shape
-        out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
-        local_condition_batch = tf.slice(local_condition_batch,
-                                         [0, 0, 0],
-                                         [-1, out_width, -1])
+        if not isGeneration:
+            out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
+            local_condition_batch = tf.slice(local_condition_batch,
+                                             [0, 0, 0],
+                                             [-1, out_width, -1])
 
-        output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+        else:
+            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
@@ -506,7 +522,7 @@ class WaveNetModel(object):
                 with tf.name_scope('layer{}'.format(layer_index)):
                     output, current_layer, local_condition_batch = self._create_dilation_layer(
                         current_layer, layer_index, dilation,
-                        global_condition_batch, local_condition_batch, output_width)
+                        global_condition_batch, local_condition_batch, output_width, isGeneration)
                     outputs.append(output)
 
         with tf.name_scope('postprocessing'):
@@ -679,6 +695,8 @@ class WaveNetModel(object):
             # Only lookup the embedding if the global condition is presented
             # as an integer of mutually-exclusive categories ...
             embedding_table = self.variables['embeddings']['lc_embedding']
+            print("inside _emded_lc")
+            print(local_condition)
             embedding = tf.nn.embedding_lookup(embedding_table,
                                                local_condition)
         elif local_condition is not None:
@@ -707,7 +725,7 @@ class WaveNetModel(object):
             #     [self.batch_size, int(len), self.local_condition_channels])
         return embedding
 
-    def predict_proba(self, waveform, global_condition=None, local_condition=None, name='wavenet'):
+    def predict_proba(self, waveform, global_condition=None, local_condition=None, isTest=False, name='wavenet'):
         '''Computes the probability distribution of the next sample based on
         all samples in the input waveform.
         If you want to generate audio by feeding the output of the network back
@@ -721,19 +739,32 @@ class WaveNetModel(object):
 
             gc_embedding = self._embed_gc(global_condition)
             lc_embedding = self._embed_lc(local_condition)
+            print("in the predict_proba")
+            print(lc_embedding.shape)
+            # network_input_width = tf.shape(encoded)[1] - 1
+            #
+            # encoded = tf.slice(encoded, [0, 0, 0],
+            #                          [-1, network_input_width, -1])
+            #
+            # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            #                         [-1, network_input_width, -1])
 
-            raw_output = self._create_network(encoded, gc_embedding, lc_embedding)
+            raw_output = self._create_network(encoded, gc_embedding, lc_embedding, isGeneration=True)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
+            if isTest:
+                return out
             # Cast to float64 to avoid bug in TensorFlow
             proba = tf.cast(
                 tf.nn.softmax(tf.cast(out, tf.float64)), tf.float32)
+            # return tf.shape(proba)
+
             last = tf.slice(
                 proba,
                 [tf.shape(proba)[0] - 1, 0],
                 [1, self.quantization_channels])
             return tf.reshape(last, [-1])
 
-    def predict_proba_incremental(self, waveform, global_condition=None, local_condition=None,
+    def predict_proba_incremental(self, waveform, global_condition=None, local_condition=None, isTest=False,
                                   name='wavenet'):
         '''Computes the probability distribution of the next sample
         incrementally, based on a single sample and all previously passed
@@ -749,8 +780,14 @@ class WaveNetModel(object):
             encoded = tf.reshape(encoded, [-1, self.quantization_channels])
             gc_embedding = self._embed_gc(global_condition)
             lc_embedding = self._embed_lc(local_condition)
+            # if self.local_condition_cardinality is not None:
+            #     lc_embedding = self._embed_lc(local_condition)
+            # else:
+            #     lc_embedding = local_condition
             raw_output = self._create_generator(encoded, gc_embedding, lc_embedding)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
+            if isTest:
+                return out
             proba = tf.cast(
                 tf.nn.softmax(tf.cast(out, tf.float64)), tf.float32)
             last = tf.slice(
@@ -787,10 +824,6 @@ class WaveNetModel(object):
             else:
                 network_input = encoded
 
-            print("in the loss")
-            print(network_input.shape)
-            print(lc_embedding.shape)
-            # print(lc.shape)
 
             # Cut off the last sample of network input to preserve causality.
             network_input_width = tf.shape(network_input)[1] - 1
@@ -802,10 +835,6 @@ class WaveNetModel(object):
                                      [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
-            print("in the loss 2")
-            print(network_input.shape)
-            # print(lc_embedding.shape)
-            # print(lc.shape)
 
             raw_output = self._create_network(network_input, gc_embedding, lc_embedding)
 

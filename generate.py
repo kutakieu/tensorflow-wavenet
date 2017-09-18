@@ -10,7 +10,9 @@ import librosa
 import numpy as np
 import tensorflow as tf
 
-from wavenet import WaveNetModel, mu_law_decode, mu_law_encode, audio_reader
+from wavenet import WaveNetModel, mu_law_decode, mu_law_encode, audio_reader, image2vector
+import moviepy.editor as mp
+from PIL import Image
 
 SAMPLES = 16000
 TEMPERATURE = 1.0
@@ -95,6 +97,22 @@ def get_arguments():
         type=int,
         default=None,
         help='ID of category to generate, if globally conditioned.')
+    parser.add_argument(
+        '--lc_channels',
+        type=int,
+        default=512,
+        help='Number of local condition embedding channels. Omit if no '
+             'global conditioning.')
+    parser.add_argument(
+        '--lc_cardinality',
+        type=int,
+        default=None,
+        help='Number of categories upon which we locally condition.')
+    parser.add_argument(
+        '--lc_id',
+        type=int,
+        default=None,
+        help='ID of category to generate, if locally conditioned.')
     arguments = parser.parse_args()
     if arguments.gc_channels is not None:
         if arguments.gc_cardinality is None:
@@ -131,6 +149,24 @@ def create_seed(filename,
 
     return quantized[:cut_index]
 
+def generate_lc(directory, sample_rate, i2v, sample_length):
+    clip = mp.VideoFileClip(directory + "/tmp.mp4")
+
+    frame_length = int(sample_rate / clip.fps + 0.5)
+    num_frames = int(sample_length / frame_length) + 1
+
+    image_vectors = []
+
+    for i in range(num_frames):
+        img = Image.fromarray(clip.get_frame(i))
+        img.thumbnail([32, 18], Image.ANTIALIAS)
+        img = np.array(img) / 255
+        h, w = img.shape[0], img.shape[1]
+        img = img.reshape((1, w, h, 3))
+        image_vector = i2v.convert(img)
+        image_vector = image_vector.reshape(512)
+        image_vectors.append(image_vector)
+    return image_vectors, frame_length
 
 def main():
     args = get_arguments()
@@ -153,14 +189,22 @@ def main():
         scalar_input=wavenet_params['scalar_input'],
         initial_filter_width=wavenet_params['initial_filter_width'],
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=args.gc_cardinality)
+        global_condition_cardinality=args.gc_cardinality,
+        local_condition_channels=args.lc_channels,
+        local_condition_cardinality=args.lc_cardinality)
 
     samples = tf.placeholder(tf.int32)
+    gc_placeholder = tf.placeholder(tf.int32) if net.global_condition_cardinality is not None \
+        else None
+    lc_placeholder = tf.placeholder(tf.float32, shape=(512,)) if net.local_condition_channels is not None \
+        else None
 
     if args.fast_generation:
-        next_sample = net.predict_proba_incremental(samples, args.gc_id)
+        # next_sample = net.predict_proba_incremental(samples, args.gc_id)
+        next_sample = net.predict_proba_incremental(samples, gc_placeholder, lc_placeholder)
     else:
-        next_sample = net.predict_proba(samples, args.gc_id)
+        # next_sample = net.predict_proba(samples, args.gc_id)
+        next_sample = net.predict_proba(samples, gc_placeholder, lc_placeholder)
 
     if args.fast_generation:
         sess.run(tf.global_variables_initializer())
@@ -173,6 +217,8 @@ def main():
 
     print('Restoring model from {}'.format(args.checkpoint))
     saver.restore(sess, args.checkpoint)
+
+    print("Restoring model done")
 
     decode = mu_law_decode(samples, wavenet_params['quantization_channels'])
 
@@ -188,7 +234,18 @@ def main():
         waveform = [quantization_channels / 2] * (net.receptive_field - 1)
         waveform.append(np.random.randint(quantization_channels))
 
+    print("step 1")
+
+    """create lc here"""
+    i2v = image2vector([32, 18, 3])
+    # frame_length is the number of samples for each video frame
+    lc, frame_length = generate_lc(".", 16000, i2v, args.samples)
+    current_lc = lc[0]
+    print("lc shape")
+    print(current_lc.shape)
+    print(frame_length)
     if args.fast_generation and args.wav_seed:
+    # if args.fast_generation:
         # When using the incremental generation, we need to
         # feed in all priming samples one by one before starting the
         # actual generation.
@@ -202,11 +259,15 @@ def main():
         for i, x in enumerate(waveform[-net.receptive_field: -1]):
             if i % 100 == 0:
                 print('Priming sample {}'.format(i))
-            sess.run(outputs, feed_dict={samples: x})
+            sess.run(outputs, feed_dict={samples: x, lc_placeholder: current_lc})
         print('Done.')
+
+    print("step 2")
 
     last_sample_timestamp = datetime.now()
     for step in range(args.samples):
+        if step%100==0:
+            print(step)
         if args.fast_generation:
             outputs = [next_sample]
             outputs.extend(net.push_ops)
@@ -218,8 +279,11 @@ def main():
                 window = waveform
             outputs = [next_sample]
 
+        if step % frame_length == 0:
+            print(int(step/frame_length))
+            current_lc = lc[int(step/frame_length)]
         # Run the WaveNet to predict the next sample.
-        prediction = sess.run(outputs, feed_dict={samples: window})[0]
+        prediction = sess.run(outputs, feed_dict={samples: window, lc_placeholder: current_lc})[0]
 
         # Scale prediction distribution using temperature.
         np.seterr(divide='ignore')
