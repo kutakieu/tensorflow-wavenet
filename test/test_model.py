@@ -224,7 +224,6 @@ def compare_logits(sess, net, gc, lc):
 
     """ fast generation preparation """
     for sample in initial_waveform[:-1]:
-        print("here")
         feed_dict_fast = {samples_placeholder: [sample]}
         feed_dict_fast[gc_placeholder] = gc
         feed_dict_fast[lc_placeholder] = [0]
@@ -567,6 +566,9 @@ class TestNet(tf.test.TestCase):
             _audio = audio[i*self.net.batch_size:(i+1)*self.net.batch_size]
             _gc = gc[i*self.net.batch_size:(i+1)*self.net.batch_size]
             _lc = lc[i*self.net.batch_size:(i+1)*self.net.batch_size]
+            print("training audio length")
+            print(_audio.shape)
+            exit()
 
             if gc is None:
                 # No global conditioning.
@@ -617,6 +619,9 @@ class TestNet(tf.test.TestCase):
         loss = self.net.loss(input_batch=audio_placeholder,
                              global_condition_batch=gc_placeholder,
                              local_condition_batch=lc_placeholder)
+        validation = self.net.validation(input_batch=audio_placeholder,
+                             global_condition_batch=gc_placeholder,
+                             local_condition_batch=lc_placeholder)
         optimizer = optimizer_factory[self.optimizer_type](
                       learning_rate=self.learning_rate, momentum=self.momentum)
         trainable = tf.trainable_variables()
@@ -627,7 +632,7 @@ class TestNet(tf.test.TestCase):
         max_allowed_loss = 0.1
         loss_val = max_allowed_loss
         initial_loss = None
-        operations = [loss, optim]
+        operations = [loss, optim, validation]
         with self.test_session() as sess:
             feed_dict, speaker_index, audio, gc, lc  = CreateTrainingFeedDict(
                 audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, 0)
@@ -646,6 +651,7 @@ class TestNet(tf.test.TestCase):
                 [results] = sess.run([operations], feed_dict=feed_dict)
                 if i % 100 == 0:
                     print("i: %d loss: %f" % (i, results[0]))
+                    print("i: %d validation: %f" % (i, results[0]))
 
             loss_val = results[0]
 

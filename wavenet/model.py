@@ -491,12 +491,6 @@ class WaveNetModel(object):
         outputs = []
         current_layer = input_batch
 
-        print("in the create_network")
-        print(input_batch.shape)
-        print(local_condition_batch.shape)
-        # print(global_condition_batch.shape)
-
-
         # Pre-process the input with a regular convolution
         if self.scalar_input:
             initial_channels = 1
@@ -673,9 +667,6 @@ class WaveNetModel(object):
             embedding = global_condition
 
         if embedding is not None:
-            print(embedding.shape)
-            print(self.batch_size)
-            print(self.global_condition_channels)
             embedding = tf.reshape(
                 embedding,
                 [self.batch_size, 1, self.global_condition_channels])
@@ -695,8 +686,7 @@ class WaveNetModel(object):
             # Only lookup the embedding if the global condition is presented
             # as an integer of mutually-exclusive categories ...
             embedding_table = self.variables['embeddings']['lc_embedding']
-            print("inside _emded_lc")
-            print(local_condition)
+
             embedding = tf.nn.embedding_lookup(embedding_table,
                                                local_condition)
         elif local_condition is not None:
@@ -715,14 +705,11 @@ class WaveNetModel(object):
                                         self.local_condition_channels))
             embedding = local_condition
 
-        if embedding is not None:
-            print(embedding.shape)
-            print(self.batch_size)
-            print(self.local_condition_channels)
-            # embedding = tf.reshape(
-            #     embedding,
-            #     # [self.batch_size, 1, self.local_condition_channels])
-            #     [self.batch_size, int(len), self.local_condition_channels])
+        # if embedding is not None:
+        #     embedding = tf.reshape(
+        #         embedding,
+        #         # [self.batch_size, 1, self.local_condition_channels])
+        #         [self.batch_size, int(len), self.local_condition_channels])
         return embedding
 
     def predict_proba(self, waveform, global_condition=None, local_condition=None, isTest=False, name='wavenet'):
@@ -739,8 +726,7 @@ class WaveNetModel(object):
 
             gc_embedding = self._embed_gc(global_condition)
             lc_embedding = self._embed_lc(local_condition)
-            print("in the predict_proba")
-            print(lc_embedding.shape)
+
             # network_input_width = tf.shape(encoded)[1] - 1
             #
             # encoded = tf.slice(encoded, [0, 0, 0],
@@ -874,3 +860,72 @@ class WaveNetModel(object):
                     tf.summary.scalar('total_loss', total_loss)
 
                     return total_loss
+
+    def validation(self,
+             input_batch,
+             global_condition_batch=None,
+             local_condition_batch=None,
+             name='wavenet'):
+        with tf.name_scope(name):
+            # We mu-law encode and quantize the input audioform.
+            encoded_input = mu_law_encode(input_batch,
+                                          self.quantization_channels)
+
+            gc_embedding = self._embed_gc(global_condition_batch)
+            lc_embedding = self._embed_lc(local_condition_batch)
+            encoded = self._one_hot(encoded_input)
+            if self.scalar_input:
+                network_input = tf.reshape(
+                    tf.cast(input_batch, tf.float32),
+                    [self.batch_size, -1, 1])
+                lc = network_input = tf.reshape(
+                    tf.cast(lc_embedding, tf.float32),
+                    [self.batch_size, -1, 1])
+            else:
+                network_input = encoded
+
+
+            # Cut off the last sample of network input to preserve causality.
+            network_input_width = tf.shape(network_input)[1] - 1
+
+            network_input = tf.slice(network_input, [0, 0, 0],
+                                     [-1, network_input_width, -1])
+
+            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+                                     [-1, network_input_width, -1])
+            # lc_embedding = lc_embedding[:,3:,:]
+
+
+            raw_output = self._create_network(network_input, gc_embedding, lc_embedding)
+
+            with tf.name_scope('loss'):
+                # Cut off the samples corresponding to the receptive field
+                # for the first predicted sample.
+                target_output = tf.slice(
+                    tf.reshape(
+                        encoded,
+                        [self.batch_size, -1, self.quantization_channels]),
+                    [0, self.receptive_field, 0],
+                    [-1, -1, -1])
+                target_output = tf.reshape(target_output,
+                                           [-1, self.quantization_channels])
+                prediction = tf.reshape(raw_output,
+                                        [-1, self.quantization_channels])
+                loss = tf.nn.softmax_cross_entropy_with_logits(
+                    logits=prediction,
+                    labels=target_output)
+
+                proba = tf.cast(
+                    tf.nn.softmax(tf.cast(prediction, tf.float64)), tf.float32)
+                # return tf.shape(proba)
+                last = tf.slice(
+                    proba,
+                    [tf.shape(proba)[0] - 1, 0],
+                    [1, self.quantization_channels])
+
+                return loss, proba
+
+
+
+
+

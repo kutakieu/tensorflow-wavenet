@@ -13,19 +13,21 @@ import json
 import os
 import sys
 import time
+import numpy as np
+import librosa
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
 
-from wavenet import WaveNetModel, AudioReader, optimizer_factory
+from wavenet import WaveNetModel, AudioReader, optimizer_factory, audio_reader, mu_law_decode
 
 BATCH_SIZE = 1
 # DATA_DIRECTORY = './VCTK-Corpus'
-DATA_DIRECTORY = "."
+DATA_DIRECTORY = "./data/"
 LOGDIR_ROOT = './logdir'
-CHECKPOINT_EVERY = 500
-# NUM_STEPS = int(1e5)
-NUM_STEPS = int(1e4)
+CHECKPOINT_EVERY = 1000
+NUM_STEPS = int(1e3)
+# NUM_STEPS = int(5)
 LEARNING_RATE = 1e-3
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
@@ -36,6 +38,7 @@ EPSILON = 0.001
 MOMENTUM = 0.9
 MAX_TO_KEEP = 5
 METADATA = False
+SAMPLE_RATE = 16000
 
 
 def get_arguments():
@@ -107,6 +110,8 @@ def get_arguments():
     parser.add_argument('--max_checkpoints', type=int, default=MAX_TO_KEEP,
                         help='Maximum amount of checkpoints that will be kept alive. Default: '
                              + str(MAX_TO_KEEP) + '.')
+    parser.add_argument('--restore_model', type=str, default=None,
+                        help='Restore the trained model to restart training: path to the model')
     return parser.parse_args()
 
 
@@ -189,6 +194,28 @@ def validate_directories(args):
     }
 
 
+def prediction2sample(prediction, temperature, quantization_channels):
+    # Scale prediction distribution using temperature.
+
+    np.seterr(divide='ignore')
+    scaled_prediction = np.log(prediction) / temperature
+    scaled_prediction = (scaled_prediction -
+                         np.logaddexp.reduce(scaled_prediction))
+    scaled_prediction = np.exp(scaled_prediction)
+    np.seterr(divide='warn')
+
+    # Prediction distribution at temperature=1.0 should be unchanged after
+    # scaling.
+    # if temperature == 1.0:
+    #     np.testing.assert_allclose(
+    #         prediction, scaled_prediction, atol=1e-5,
+    #         err_msg='Prediction scaling at temperature=1.0 '
+    #                 'is not working as intended.')
+
+    sample = np.random.choice(
+        np.arange(quantization_channels), p=scaled_prediction)
+    return sample
+
 def main():
     args = get_arguments()
 
@@ -201,6 +228,7 @@ def main():
 
     logdir = directories['logdir']
     restore_from = directories['restore_from']
+    print(restore_from)
 
     # Even if we restored the model, we will treat it as new training
     # if the trained model is written into an arbitrary location.
@@ -272,6 +300,15 @@ def main():
     trainable = tf.trainable_variables()
     optim = optimizer.minimize(loss, var_list=trainable)
 
+    """variables for validation"""
+    audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
+    gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
+    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, 512)) if lc_enabled else None
+    validation = net.validation(input_batch=audio_placeholder_validation,
+                    global_condition_batch=gc_placeholder_validation,
+                    local_condition_batch = lc_placeholder_validation)
+
+
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
     writer.add_graph(tf.get_default_graph())
@@ -280,6 +317,18 @@ def main():
 
     # Set up session
     sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
+
+    # if args.restore_model is not None:
+    #     variables_to_restore = {
+    #         var.name[:-2]: var for var in tf.global_variables()
+    #         if not ('state_buffer' in var.name or 'pointer' in var.name)}
+    #     saver = tf.train.Saver(variables_to_restore)
+    #
+    #     print('Restoring model from {}'.format(args.checkpoint))
+    #     saver.restore(sess, args.checkpoint)
+    #
+    #     print("Restoring model done")
+    # else:
     init = tf.global_variables_initializer()
     sess.run(init)
 
@@ -302,12 +351,12 @@ def main():
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     reader.start_threads(sess)
 
-    step = None
     last_saved_step = saved_global_step
+
     try:
-        for step in range(saved_global_step + 1, args.num_steps):
+        for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
-            if args.store_metadata and step % 500 == 0:
+            if args.store_metadata and epoch % 500 == 0:
                 # Slow run that stores extra information for debugging.
                 print('Storing metadata')
                 run_options = tf.RunOptions(
@@ -316,35 +365,108 @@ def main():
                     [summaries, loss, optim],
                     options=run_options,
                     run_metadata=run_metadata)
-                writer.add_summary(summary, step)
+                writer.add_summary(summary, epoch)
                 writer.add_run_metadata(run_metadata,
-                                        'step_{:04d}'.format(step))
+                                        'epoch{:04d}'.format(epoch))
                 tl = timeline.Timeline(run_metadata.step_stats)
                 timeline_path = os.path.join(logdir, 'timeline.trace')
                 with open(timeline_path, 'w') as f:
                     f.write(tl.generate_chrome_trace_format(show_memory=True))
+
             else:
                 summary, loss_value, _ = sess.run([summaries, loss, optim])
-                writer.add_summary(summary, step)
+                writer.add_summary(summary, epoch)
 
-            duration = time.time() - start_time
-            print('step {:d} - loss = {:.3f}, ({:.3f} sec/step)'
-                  .format(step, loss_value, duration))
+                duration = time.time() - start_time
+                print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                      .format(epoch, loss_value, duration))
 
-            if step % args.checkpoint_every == 0:
-                save(saver, sess, logdir, step)
-                last_saved_step = step
+            """ epoch """
+            num_video_frames = []
+            training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                                                                                        reader.i2v, "training", num_video_frames)
+            pad = np.zeros((512, net.receptive_field))
+            frame_index = 1
+            for audio, video_vectors in training_data:
+                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
+                               'constant')
+                # pad the video vector
+                video_vectors = np.concatenate((pad, video_vectors), axis=1)
+                video_vectors = video_vectors.transpose()
+                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_validation: audio,
+                                                                    lc_placeholder_validation: video_vectors})
+
+                duration = time.time() - start_time
+                if frame_index % 10 == 0:
+                    print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                frame_index += 1
+
+
+            """validation and generation"""
+            if epoch % 5 == 0:
+                print("calculating validation score...")
+                num_video_frames = []
+                validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                                                                                            reader.i2v, "validation", num_video_frames)
+                validation_score = 0
+                pad = np.zeros((512, net.receptive_field))
+                frame_index = 1
+                waveform = []
+                prediction = None
+
+                for audio, video_vectors in validation_data:
+
+                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
+                                   'constant')
+                    # pad the video vector
+                    video_vectors = np.concatenate((pad, video_vectors), axis=1)
+                    video_vectors = video_vectors.transpose()
+                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                    validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
+                                                                        lc_placeholder_validation: video_vectors})
+
+                    validation_score += validation_value
+
+                    if prediction is not None:
+                        for i in range(prediction.shape[0]):
+                            sample = prediction2sample(prediction[i,:], 1.0, net.quantization_channels)
+                            waveform.append(sample)
+
+                    if frame_index % 10 == 0:
+                        print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
+                    frame_index += 1
+
+                    if frame_index == 10:
+                        break
+
+
+                print('epoch {:d} - validation = {:.3f}'
+                      .format(epoch, sum(validation_score)))
+                if len(waveform) > 0:
+                    decode = mu_law_decode(audio_placeholder_validation, wavenet_params['quantization_channels'])
+                    out = sess.run(decode, feed_dict={audio_placeholder_validation: waveform})
+                    write_wav(out, wavenet_params['sample_rate'], DATA_DIRECTORY + "epoch_" + str(epoch) + ".wav")
+
+            if epoch % args.checkpoint_every == 0:
+                save(saver, sess, logdir, epoch)
+                last_saved_step = epoch
 
     except KeyboardInterrupt:
         # Introduce a line break after ^C is displayed so save message
         # is on its own line.
         print()
     finally:
-        if step > last_saved_step:
-            save(saver, sess, logdir, step)
+        if epoch > last_saved_step:
+            save(saver, sess, logdir, epoch)
         coord.request_stop()
         coord.join(threads)
 
+def write_wav(waveform, sample_rate, filename):
+    y = np.array(waveform)
+    librosa.output.write_wav(filename, y, sample_rate)
+    print('Updated wav file at {}'.format(filename))
 
 if __name__ == '__main__':
     main()

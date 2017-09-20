@@ -67,6 +67,39 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
+def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
+
+    # create or load a list of youtube videos (URL)
+    # this function gets called every time the model runs out the given training data
+
+    clip = mp.VideoFileClip(directory + video_name + ".mp4")
+    # clip.audio.write_audiofile(directory + video_name +".wav")
+
+    audio, _ = librosa.load(directory + video_name +".wav", sr=sample_rate, mono=True)
+    audio = audio.reshape(-1, 1)
+    # i2v = image2vector([32, 18, 3])
+
+    sample_size = int(sample_rate / clip.fps + 0.5)
+
+    # to get frame
+    # clip.get_frame(0)
+    # to get image instance from numpy array
+    num_frames = int(clip.duration * clip.fps) - 1
+    if num_video_frames is not None:
+        num_video_frames.append(num_frames)
+
+    for i in range(num_frames):
+        img = Image.fromarray(clip.get_frame(i))
+        img.thumbnail([32, 18], Image.ANTIALIAS)
+        img = np.array(img) / 255
+        h, w = img.shape[0], img.shape[1]
+        img = img.reshape((1, w, h, 3))
+        image_vector = i2v.convert(img)
+        image_vector = image_vector.reshape(512, 1)
+        image_vectors = np.tile(image_vector, sample_size)
+        # yield a set of data for each frame and corresponding audio data
+        yield audio[i*sample_size : (i+1)*sample_size], image_vectors
+
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 
     # create or load a list of youtube videos (URL)
@@ -227,12 +260,15 @@ class AudioReader(object):
     def thread_main(self, sess):
         stop = False
         # Go through the dataset multiple times
+        """
+        to make training data by downloading youtube videos
         file_name = "video_list.txt"
         video_list_file = open(file_name, "r")
         video_list = video_list_file.readlines()
+        """
         video_index = 0
         while not stop:
-            iterator = load_generic_audio_video(self.audio_dir, self.sample_rate, self.i2v, video_list, video_index)
+            iterator = load_generic_audio_video_without_downloading(self.audio_dir, self.sample_rate, self.i2v, "training")
             video_index += 1
             # for audio, filename, category_id, video_vectors in iterator:
             for audio, video_vectors in iterator:
@@ -264,8 +300,7 @@ class AudioReader(object):
                     while len(audio) > self.receptive_field:
                         piece = audio[:(self.receptive_field +
                                         self.sample_size), :]
-                        # print("hogehogehoeg")
-                        # print(piece.shape)
+
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
