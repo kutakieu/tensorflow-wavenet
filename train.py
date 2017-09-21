@@ -240,6 +240,7 @@ def main():
     # Create coordinator.
     coord = tf.train.Coordinator()
 
+
     # Load raw waveform from VCTK corpus.
     with tf.name_scope('create_inputs'):
         # Allow silence trimming to be skipped by specifying a threshold near
@@ -290,9 +291,14 @@ def main():
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
-    loss = net.loss(input_batch=audio_batch,
-                    global_condition_batch=gc_id_batch,
-                    local_condition_batch = lc_id_batch,
+
+    audio_placeholder_training = tf.placeholder(dtype=tf.float32, shape=None)
+    gc_placeholder_training = tf.placeholder(dtype=tf.int32) if gc_enabled else None
+    lc_placeholder_training = tf.placeholder(dtype=tf.float32,
+                                               shape=(net.batch_size, None, 512)) if lc_enabled else None
+    loss = net.loss(input_batch=audio_placeholder_training,
+                    global_condition_batch=gc_placeholder_training,
+                    local_condition_batch = lc_placeholder_training,
                     l2_regularization_strength=args.l2_regularization_strength)
     optimizer = optimizer_factory[args.optimizer](
                     learning_rate=args.learning_rate,
@@ -348,38 +354,42 @@ def main():
               "the previous model.")
         raise
 
-    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    reader.start_threads(sess)
+    # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    # reader.start_threads(sess)
+
+    log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
 
     last_saved_step = saved_global_step
 
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
-            if args.store_metadata and epoch % 500 == 0:
-                # Slow run that stores extra information for debugging.
-                print('Storing metadata')
-                run_options = tf.RunOptions(
-                    trace_level=tf.RunOptions.FULL_TRACE)
-                summary, loss_value, _ = sess.run(
-                    [summaries, loss, optim],
-                    options=run_options,
-                    run_metadata=run_metadata)
-                writer.add_summary(summary, epoch)
-                writer.add_run_metadata(run_metadata,
-                                        'epoch{:04d}'.format(epoch))
-                tl = timeline.Timeline(run_metadata.step_stats)
-                timeline_path = os.path.join(logdir, 'timeline.trace')
-                with open(timeline_path, 'w') as f:
-                    f.write(tl.generate_chrome_trace_format(show_memory=True))
 
-            else:
-                summary, loss_value, _ = sess.run([summaries, loss, optim])
-                writer.add_summary(summary, epoch)
-
-                duration = time.time() - start_time
-                print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-                      .format(epoch, loss_value, duration))
+            """ original code """
+            # if args.store_metadata and epoch % 500 == 0:
+            #     # Slow run that stores extra information for debugging.
+            #     print('Storing metadata')
+            #     run_options = tf.RunOptions(
+            #         trace_level=tf.RunOptions.FULL_TRACE)
+            #     summary, loss_value, _ = sess.run(
+            #         [summaries, loss, optim],
+            #         options=run_options,
+            #         run_metadata=run_metadata)
+            #     writer.add_summary(summary, epoch)
+            #     writer.add_run_metadata(run_metadata,
+            #                             'epoch{:04d}'.format(epoch))
+            #     tl = timeline.Timeline(run_metadata.step_stats)
+            #     timeline_path = os.path.join(logdir, 'timeline.trace')
+            #     with open(timeline_path, 'w') as f:
+            #         f.write(tl.generate_chrome_trace_format(show_memory=True))
+            #
+            # else:
+            #     summary, loss_value, _ = sess.run([summaries, loss, optim])
+            #     writer.add_summary(summary, epoch)
+            #
+            #     duration = time.time() - start_time
+            #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+            #           .format(epoch, loss_value, duration))
 
             """ epoch """
             num_video_frames = []
@@ -387,6 +397,7 @@ def main():
                                                                                         reader.i2v, "training", num_video_frames)
             pad = np.zeros((512, net.receptive_field))
             frame_index = 1
+
             for audio, video_vectors in training_data:
                 audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
                                'constant')
@@ -394,14 +405,16 @@ def main():
                 video_vectors = np.concatenate((pad, video_vectors), axis=1)
                 video_vectors = video_vectors.transpose()
                 video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
-                summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_validation: audio,
-                                                                    lc_placeholder_validation: video_vectors})
+                summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
+                                                                    lc_placeholder_training: video_vectors})
 
                 duration = time.time() - start_time
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
+                if frame_index == 11:
+                    break
 
 
             """validation and generation"""
@@ -424,6 +437,7 @@ def main():
                     video_vectors = np.concatenate((pad, video_vectors), axis=1)
                     video_vectors = video_vectors.transpose()
                     video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                    # return the error and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
                                                                         lc_placeholder_validation: video_vectors})
 
@@ -431,19 +445,22 @@ def main():
 
                     if prediction is not None:
                         for i in range(prediction.shape[0]):
+                            # generate a sample based on the predection
                             sample = prediction2sample(prediction[i,:], 1.0, net.quantization_channels)
                             waveform.append(sample)
 
                     if frame_index % 10 == 0:
+                        # show the progress
                         print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
                     frame_index += 1
 
                     if frame_index == 10:
                         break
 
-
                 print('epoch {:d} - validation = {:.3f}'
                       .format(epoch, sum(validation_score)))
+                log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
+
                 if len(waveform) > 0:
                     decode = mu_law_decode(audio_placeholder_validation, wavenet_params['quantization_channels'])
                     out = sess.run(decode, feed_dict={audio_placeholder_validation: waveform})
@@ -458,10 +475,11 @@ def main():
         # is on its own line.
         print()
     finally:
+        log_file.close()
         if epoch > last_saved_step:
             save(saver, sess, logdir, epoch)
-        coord.request_stop()
-        coord.join(threads)
+        # coord.request_stop()
+        # coord.join(threads)
 
 def write_wav(waveform, sample_rate, filename):
     y = np.array(waveform)
