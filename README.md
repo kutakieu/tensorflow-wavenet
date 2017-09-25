@@ -66,8 +66,7 @@ pip install -r requirements_gpu.txt
 
 ## Training the network
 
-You can use any corpus containing `.wav` files.
-We've mainly used the [VCTK corpus](http://homepages.inf.ed.ac.uk/jyamagis/page3/page58/page58.html) (around 10.4GB, [Alternative host](http://www.udialogue.org/download/cstr-vctk-corpus.html)) so far.
+The training data is already prepared in the ./data directory. However, in order to use vgg19 networks, the .npy file has to be downloaded form [here](https://mega.nz/#!xZ8glS6J!MAnE91ND_WyfZ_8mvkuSa2YcA7q-1ehfSm-Q1fxOvvs).
 
 In order to train the network, execute
 ```bash
@@ -89,12 +88,17 @@ Global conditioning refers to modifying the model such that the id of a set of m
 In the case of the VCTK, this id is the integer id of the speaker, of which there are over a hundred.
 This allows (indeed requires) that a speaker id be specified at time of generation to select which of the speakers it should mimic. For more details see the paper or source code.
 
-### Training with Global Conditioning
-The instructions above for training refer to training without global conditioning. To train with global conditioning, specify command-line arguments as follows:
+### Training with Local Conditioning
+The instructions above for training refer to training without local conditioning. To train with local conditioning, specify command-line arguments as follows:
 ```
-python train.py --data_dir=corpus --gc_channels=32
+python train.py --lc_channels=512 --isDebug=False --num_steps=1000 --generate_every=5
 ```
-The --gc_channels argument does two things:
+As the vector describes an input image has 512 dimension, --lc_channels is 512. Therefore, if you change the size of the input image, you need to change it.
+--isDebug tells the train.py script if you are debugging or not.
+--num_steps is the number of epochs to train the model. Defalt is 1000.
+--generate_every is the number of epochs to calculate validation score and generate sound file after. Defalt is 5.
+
+The --lc_channels argument does two things:
 * It tells the train.py script that
 it should build a model that includes global conditioning.
 * It specifies the
