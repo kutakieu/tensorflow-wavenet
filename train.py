@@ -227,12 +227,14 @@ def main():
 
     if args.isDebug in ["True", "true", "t", "1"]:
         isDebug = True
+        print("Running train.py for debugging...")
     elif args.isDebug in ["False", "false", "f", "0"]:
         isDebug = False
+        print("Running train.py for actual training...")
+    else:
+        print("--isDebug has to be True or False")
+        exit()
 
-    print(isDebug)
-    print(args.generate_every)
-    exit()
 
     try:
         directories = validate_directories(args)
