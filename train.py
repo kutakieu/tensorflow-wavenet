@@ -114,6 +114,8 @@ def get_arguments():
                              + str(MAX_TO_KEEP) + '.')
     parser.add_argument('--restore_model', type=str, default=None,
                         help='Restore the trained model to restart training: path to the model')
+    parser.add_argument('--isDebug', type=str, default="False",
+                        help='Run this program to debug or not')
     return parser.parse_args()
 
 
@@ -220,6 +222,14 @@ def prediction2sample(prediction, temperature, quantization_channels):
 
 def main():
     args = get_arguments()
+
+    if args.isDebug in ["True", "true", "t", "1"]:
+        isDebug = True
+    elif args.isDebug in ["False", "false", "f", "0"]:
+        isDebug = False
+
+    print(isDebug)
+    exit()
 
     try:
         directories = validate_directories(args)
