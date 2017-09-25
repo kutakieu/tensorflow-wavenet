@@ -63,6 +63,15 @@ For GPU support, use
 ```bash
 pip install -r requirements_gpu.txt
 ```
+To use moviepy library, you may need to install ffmpeg.
+```bash
+sudo apt install ffmpeg
+```
+or/and may need to execute
+```
+imageio.plugins.ffmpeg.download()
+```
+in python
 
 ## Training the network
 
