@@ -3,3 +3,4 @@ tensorflow>=1.0.0
 pytube>=6.2.2
 moviepy>=0.2.2.13
 Pillow>=3.1.0
+ffmpeg-normalize>=0.6.0
