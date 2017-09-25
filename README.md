@@ -103,8 +103,11 @@ The instructions above for training refer to training without local conditioning
 python train.py --lc_channels=512 --isDebug=False --num_steps=1000 --generate_every=5
 ```
 As the vector describes an input image has 512 dimension, --lc_channels is 512. Therefore, if you change the size of the input image, you need to change it.
+
 --isDebug tells the train.py script if you are debugging or not.
+
 --num_steps is the number of epochs to train the model. Defalt is 1000.
+
 --generate_every is the number of epochs to calculate validation score and generate sound file after. Defalt is 5.
 
 The --lc_channels argument does two things:
