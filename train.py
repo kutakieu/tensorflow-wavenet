@@ -361,6 +361,8 @@ def main():
 
     last_saved_step = saved_global_step
 
+    isDebug = False
+
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
@@ -413,7 +415,8 @@ def main():
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
-                if frame_index == 11:
+
+                if frame_index == 11 and isDebug:
                     break
 
 
@@ -454,7 +457,7 @@ def main():
                         print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
                     frame_index += 1
 
-                    if frame_index == 10:
+                    if frame_index == 10 and isDebug:
                         break
 
                 print('epoch {:d} - validation = {:.3f}'
