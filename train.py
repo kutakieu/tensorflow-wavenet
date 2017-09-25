@@ -40,6 +40,8 @@ MAX_TO_KEEP = 5
 METADATA = False
 SAMPLE_RATE = 16000
 
+isDebug = True
+
 
 def get_arguments():
     def _str_to_bool(s):
@@ -361,7 +363,7 @@ def main():
 
     last_saved_step = saved_global_step
 
-    isDebug = False
+
 
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
