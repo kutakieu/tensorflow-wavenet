@@ -116,6 +116,8 @@ def get_arguments():
                         help='Restore the trained model to restart training: path to the model')
     parser.add_argument('--isDebug', type=str, default="False",
                         help='Run this program to debug or not')
+    parser.add_argument('--generate_every', type=int, default=5,
+                        help='How many steps to calculate validation score and generate sound file after.')
     return parser.parse_args()
 
 
@@ -229,6 +231,7 @@ def main():
         isDebug = False
 
     print(isDebug)
+    print(args.generate_every)
     exit()
 
     try:
@@ -433,7 +436,7 @@ def main():
 
 
             """validation and generation"""
-            if epoch % 5 == 0:
+            if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
                 validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
