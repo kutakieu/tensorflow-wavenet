@@ -40,6 +40,8 @@ MAX_TO_KEEP = 5
 METADATA = False
 SAMPLE_RATE = 16000
 
+isDebug = True
+
 
 def get_arguments():
     def _str_to_bool(s):
@@ -112,6 +114,10 @@ def get_arguments():
                              + str(MAX_TO_KEEP) + '.')
     parser.add_argument('--restore_model', type=str, default=None,
                         help='Restore the trained model to restart training: path to the model')
+    parser.add_argument('--isDebug', type=str, default="False",
+                        help='Run this program to debug or not')
+    parser.add_argument('--generate_every', type=int, default=5,
+                        help='How many steps to calculate validation score and generate sound file after.')
     return parser.parse_args()
 
 
@@ -218,6 +224,17 @@ def prediction2sample(prediction, temperature, quantization_channels):
 
 def main():
     args = get_arguments()
+
+    if args.isDebug in ["True", "true", "t", "1"]:
+        isDebug = True
+        print("Running train.py for debugging...")
+    elif args.isDebug in ["False", "false", "f", "0"]:
+        isDebug = False
+        print("Running train.py for actual training...")
+    else:
+        print("--isDebug has to be True or False")
+        exit()
+
 
     try:
         directories = validate_directories(args)
@@ -357,9 +374,12 @@ def main():
     # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     # reader.start_threads(sess)
 
-    log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
+    training_log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
+    validation_log_file = open(DATA_DIRECTORY + "validation_log.txt", "w")
 
     last_saved_step = saved_global_step
+
+
 
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
@@ -412,13 +432,16 @@ def main():
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                    training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
-                if frame_index == 11:
+
+                if frame_index == 11 and isDebug:
                     break
 
 
             """validation and generation"""
-            if epoch % 5 == 0:
+            if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
                 validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
@@ -454,12 +477,12 @@ def main():
                         print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
                     frame_index += 1
 
-                    if frame_index == 10:
+                    if frame_index == 10 and isDebug:
                         break
 
                 print('epoch {:d} - validation = {:.3f}'
                       .format(epoch, sum(validation_score)))
-                log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
+                validation_log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
 
                 if len(waveform) > 0:
                     decode = mu_law_decode(audio_placeholder_validation, wavenet_params['quantization_channels'])
@@ -475,7 +498,8 @@ def main():
         # is on its own line.
         print()
     finally:
-        log_file.close()
+        validation_log_file.close()
+        training_log_file.close()
         if epoch > last_saved_step:
             save(saver, sess, logdir, epoch)
         # coord.request_stop()
