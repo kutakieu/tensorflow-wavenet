@@ -16,15 +16,10 @@ import time
 import numpy as np
 import librosa
 
-from os import path
-
 import tensorflow as tf
 from tensorflow.python.client import timeline
 
 from wavenet import WaveNetModel, AudioReader, optimizer_factory, audio_reader, mu_law_decode
-
-here = path.abspath(path.dirname(__file__))
-os.chdir(here)
 
 BATCH_SIZE = 1
 # DATA_DIRECTORY = './VCTK-Corpus'
@@ -379,7 +374,8 @@ def main():
     # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     # reader.start_threads(sess)
 
-    log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
+    training_log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
+    validation_log_file = open(DATA_DIRECTORY + "validation_log.txt", "w")
 
     last_saved_step = saved_global_step
 
@@ -436,6 +432,8 @@ def main():
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                    training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
 
                 if frame_index == 11 and isDebug:
@@ -484,7 +482,7 @@ def main():
 
                 print('epoch {:d} - validation = {:.3f}'
                       .format(epoch, sum(validation_score)))
-                log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
+                validation_log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
 
                 if len(waveform) > 0:
                     decode = mu_law_decode(audio_placeholder_validation, wavenet_params['quantization_channels'])
@@ -500,7 +498,8 @@ def main():
         # is on its own line.
         print()
     finally:
-        log_file.close()
+        validation_log_file.close()
+        training_log_file.close()
         if epoch > last_saved_step:
             save(saver, sess, logdir, epoch)
         # coord.request_stop()
