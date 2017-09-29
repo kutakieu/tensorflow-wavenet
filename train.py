@@ -16,10 +16,15 @@ import time
 import numpy as np
 import librosa
 
+from os import path
+
 import tensorflow as tf
 from tensorflow.python.client import timeline
 
 from wavenet import WaveNetModel, AudioReader, optimizer_factory, audio_reader, mu_law_decode
+
+here = path.abspath(path.dirname(__file__))
+os.chdir(here)
 
 BATCH_SIZE = 1
 # DATA_DIRECTORY = './VCTK-Corpus'
