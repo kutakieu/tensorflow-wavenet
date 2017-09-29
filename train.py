@@ -432,7 +432,7 @@ def main():
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
-                    training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                    training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)\n'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
 
