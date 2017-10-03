@@ -68,6 +68,7 @@ def load_generic_audio(directory, sample_rate):
         yield audio, filename, category_id
 
 def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
+    """no conditioning training data generator"""
 
     # create or load a list of youtube videos (URL)
     # this function gets called every time the model runs out the given training data
