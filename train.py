@@ -387,14 +387,12 @@ def main():
 
             """ epoch without conditioning"""
             num_video_frames = []
-            training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", num_video_frames)
+            training_data = audio_reader.load_audio_without_downloading(DATA_DIRECTORY, SAMPLE_RATE, "training", num_video_frames)
             # pad = np.zeros((512, net.receptive_field))
             frame_index = 1
 
             for audio in training_data:
-                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                               'constant')
+                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
                 # pad the video vector
                 # video_vectors = np.concatenate((pad, video_vectors), axis=1)
                 # video_vectors = video_vectors.transpose()
@@ -417,8 +415,7 @@ def main():
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
-                validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", num_video_frames)
+                validation_data = audio_reader.load_audio_without_downloading(DATA_DIRECTORY, SAMPLE_RATE, "validation", num_video_frames)
                 validation_score = 0
                 # pad = np.zeros((512, net.receptive_field))
                 frame_index = 1
@@ -427,8 +424,7 @@ def main():
 
                 for audio in validation_data:
 
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                                   'constant')
+                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
                     # pad the video vector
                     # video_vectors = np.concatenate((pad, video_vectors), axis=1)
                     # video_vectors = video_vectors.transpose()

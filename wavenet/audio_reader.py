@@ -72,7 +72,7 @@ def load_audio(directory, sample_rate, file_name):
     audio = audio.reshape(-1, 1)
     return audio
 
-def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
+def load_audio_without_downloading(directory, sample_rate, video_name, num_video_frames=None):
     """no conditioning training data generator"""
 
     # create or load a list of youtube videos (URL)
