@@ -67,6 +67,11 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
+def load_audio(directory, sample_rate, file_name):
+    audio, _ = librosa.load(directory + file_name + ".wav", sr=sample_rate, mono=True)
+    audio = audio.reshape(-1, 1)
+    return audio
+
 def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
     """no conditioning training data generator"""
 
@@ -90,16 +95,16 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         num_video_frames.append(num_frames)
 
     for i in range(num_frames):
-        img = Image.fromarray(clip.get_frame(i))
-        img.thumbnail([32, 18], Image.ANTIALIAS)
-        img = np.array(img) / 255
-        h, w = img.shape[0], img.shape[1]
-        img = img.reshape((1, w, h, 3))
-        image_vector = i2v.convert(img)
-        image_vector = image_vector.reshape(512, 1)
-        image_vectors = np.tile(image_vector, sample_size)
+        # img = Image.fromarray(clip.get_frame(i))
+        # img.thumbnail([32, 18], Image.ANTIALIAS)
+        # img = np.array(img) / 255
+        # h, w = img.shape[0], img.shape[1]
+        # img = img.reshape((1, w, h, 3))
+        # image_vector = i2v.convert(img)
+        # image_vector = image_vector.reshape(512, 1)
+        # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size], image_vectors
+        yield audio[i*sample_size : (i+1)*sample_size]
 
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 

@@ -412,7 +412,7 @@ class WaveNetModel(object):
         # print("next step's input width = ")
         # print(tf.shape(transformed)[1])
         input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
-        if not isGeneration:
+        if not isGeneration and local_condition_batch is not None:
             local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
 
         return skip_contribution, input_batch + transformed, local_condition_batch
@@ -500,7 +500,7 @@ class WaveNetModel(object):
         current_layer = self._create_causal_layer(current_layer)
 
         # added to adjust the shape
-        if not isGeneration:
+        if not isGeneration and local_condition_batch is not None:
             out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
             local_condition_batch = tf.slice(local_condition_batch,
                                              [0, 0, 0],
@@ -816,8 +816,8 @@ class WaveNetModel(object):
 
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
-
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            if lc_embedding is not None:
+                lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
                                      [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
@@ -890,8 +890,8 @@ class WaveNetModel(object):
 
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
-
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            if lc_embedding is not None:
+                lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
                                      [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
