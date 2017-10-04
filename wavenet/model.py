@@ -520,11 +520,16 @@ class WaveNetModel(object):
 
         lstm_output, _ = tf.nn.dynamic_rnn(lstm_cell, local_condition_batch[0], dtype=tf.float32)
 
-        local_condition_batch = tf.matmul(lstm_output[-1], lstm_output_weight) + lstm_output_bias
-
+        local_condition_batch = tf.matmul(lstm_output[:,0,:], lstm_output_weight) + lstm_output_bias
+        print("here here")
+        print(local_condition_batch.shape)
+        print(local_condition_batch.shape[0])
+        print(local_condition_batch.shape[1])
+        print(tf.shape(local_condition_batch))
         # local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
         local_condition_batch = tf.reshape(local_condition_batch, [tf.shape(local_condition_batch)[0], 1, tf.shape(local_condition_batch)[1]])
-
+        print("here here")
+        print(local_condition_batch.shape)
         # added to adjust the shape
         if not isGeneration:
             out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
