@@ -67,7 +67,7 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
-def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
+def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, LSTM_length, num_video_frames=None):
 
     # create or load a list of youtube videos (URL)
     # this function gets called every time the model runs out the given training data
@@ -88,6 +88,10 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
     if num_video_frames is not None:
         num_video_frames.append(num_frames)
 
+    """create an input matrix for LSTM"""
+
+    img_seq_matrix_2d = np.zeros((LSTM_length, 512))
+
     for i in range(num_frames):
         img = Image.fromarray(clip.get_frame(i))
         img.thumbnail([32, 18], Image.ANTIALIAS)
@@ -95,10 +99,19 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         h, w = img.shape[0], img.shape[1]
         img = img.reshape((1, w, h, 3))
         image_vector = i2v.convert(img)
-        image_vector = image_vector.reshape(512, 1)
-        image_vectors = np.tile(image_vector, sample_size)
+        image_vector = image_vector.reshape(1, 512)
+
+        # LSTM_input_length * length_of_img_vec
+        img_seq_matrix_2d[1:,:] = img_seq_matrix_2d[:-1,:]
+        img_seq_matrix_2d[0,:] = image_vector
+
+        # sample_size * LSTM_input_length * length_of_img_vec
+        img_seq_matrix_3d = np.tile(img_seq_matrix_2d, (sample_size,1,1))
+
+        # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size], image_vectors
+
+        yield audio[i*sample_size : (i+1)*sample_size], img_seq_matrix_3d
 
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 
