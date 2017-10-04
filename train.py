@@ -118,6 +118,8 @@ def get_arguments():
                         help='Run this program to debug or not')
     parser.add_argument('--generate_every', type=int, default=5,
                         help='How many steps to calculate validation score and generate sound file after.')
+    parser.add_argument('--lstm_len', type=int, default=10,
+                        help='The length of the input for the LSTM cell.')
     return parser.parse_args()
 
 
@@ -304,7 +306,8 @@ def main():
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
         global_condition_cardinality=reader.gc_category_cardinality,
-        local_condition_channels=args.lc_channels)
+        local_condition_channels=args.lc_channels,
+        lstm_length=args.lstm_len)
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
@@ -312,7 +315,7 @@ def main():
     audio_placeholder_training = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_training = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_training = tf.placeholder(dtype=tf.float32,
-                                               shape=(net.batch_size, None, 512)) if lc_enabled else None
+                                               shape=(net.batch_size, None, net.lstm_length, 512)) if lc_enabled else None
     loss = net.loss(input_batch=audio_placeholder_training,
                     global_condition_batch=gc_placeholder_training,
                     local_condition_batch = lc_placeholder_training,
@@ -326,7 +329,7 @@ def main():
     """variables for validation"""
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
-    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, 512)) if lc_enabled else None
+    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, net.lstm_length, 512)) if lc_enabled else None
     validation = net.validation(input_batch=audio_placeholder_validation,
                     global_condition_batch=gc_placeholder_validation,
                     local_condition_batch = lc_placeholder_validation)
@@ -410,21 +413,22 @@ def main():
             #     duration = time.time() - start_time
             #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
             #           .format(epoch, loss_value, duration))
+            LSTM_length = 10
 
             """ epoch """
             num_video_frames = []
             training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", num_video_frames)
-            pad = np.zeros((512, net.receptive_field))
+                                                                                        reader.i2v, "training", LSTM_length, num_video_frames)
+            pad = np.zeros((net.receptive_field, LSTM_length, 512))
             frame_index = 1
 
             for audio, video_vectors in training_data:
                 audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
                                'constant')
                 # pad the video vector
-                video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                video_vectors = video_vectors.transpose()
-                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                video_vectors = np.concatenate((pad, video_vectors), axis=0)
+                # video_vectors = video_vectors.transpose()
+                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1], video_vectors.shape[2])
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
                                                                     lc_placeholder_training: video_vectors})
 

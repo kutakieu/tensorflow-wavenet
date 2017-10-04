@@ -58,7 +58,8 @@ class WaveNetModel(object):
                  global_condition_channels=None,
                  global_condition_cardinality=None,
                  local_condition_channels=None,
-                 local_condition_cardinality=None):
+                 local_condition_cardinality=None,
+                 lstm_length=None):
         '''Initializes the WaveNet model.
 
         Args:
@@ -117,6 +118,7 @@ class WaveNetModel(object):
             self.filter_width, self.dilations, self.scalar_input,
             self.initial_filter_width)
         self.variables = self._create_variables()
+        self.lstm_length = lstm_length
 
     @staticmethod
     def calculate_receptive_field(filter_width, dilations, scalar_input,
@@ -155,6 +157,16 @@ class WaveNetModel(object):
                             [self.local_condition_cardinality,
                              self.local_condition_channels])
                     var['embeddings'] = layer
+            with tf.variable_scope('lstm'):
+                layer = dict()
+                layer['lstm_output_weight'] = create_variable(
+                    'lstm_output_weight',
+                    [256, 128])
+                layer['lstm_output_bias'] = create_variable(
+                    'lstm_output_bias',
+                    [128])
+                layer['lstm_cell'] = tf.nn.rnn_cell.BasicLSTMCell(256, forget_bias=1.0)
+                var['lstm'] = layer
 
             with tf.variable_scope('causal_layer'):
                 layer = dict()
@@ -499,6 +511,20 @@ class WaveNetModel(object):
 
         current_layer = self._create_causal_layer(current_layer)
 
+        """ LSTM """
+        lstm_output_weight = self.variables['lstm']['lstm_output_weight']
+        lstm_output_bias = self.variables['lstm']['lstm_output_bias']
+
+        # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(256, forget_bias=1.0)
+        lstm_cell = self.variables['lstm']['lstm_cell']
+
+        lstm_output, _ = tf.nn.dynamic_rnn(lstm_cell, local_condition_batch[0], dtype=tf.float32)
+
+        local_condition_batch = tf.matmul(lstm_output[-1], lstm_output_weight) + lstm_output_bias
+
+        # local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
+        local_condition_batch = tf.reshape(local_condition_batch, [tf.shape(local_condition_batch)[0], 1, tf.shape(local_condition_batch)[1]])
+
         # added to adjust the shape
         if not isGeneration:
             out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
@@ -798,7 +824,8 @@ class WaveNetModel(object):
                                           self.quantization_channels)
 
             gc_embedding = self._embed_gc(global_condition_batch)
-            lc_embedding = self._embed_lc(local_condition_batch)
+            # lc_embedding = self._embed_lc(local_condition_batch)
+            lc_embedding = local_condition_batch
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
@@ -817,8 +844,8 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
-                                     [-1, network_input_width, -1])
+            # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            #                          [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
 
@@ -872,7 +899,8 @@ class WaveNetModel(object):
                                           self.quantization_channels)
 
             gc_embedding = self._embed_gc(global_condition_batch)
-            lc_embedding = self._embed_lc(local_condition_batch)
+            # lc_embedding = self._embed_lc(local_condition_batch)
+            lc_embedding = local_condition_batch
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
@@ -891,8 +919,8 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
-                                     [-1, network_input_width, -1])
+            # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            #                          [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
 
