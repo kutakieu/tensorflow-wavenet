@@ -23,7 +23,7 @@ from wavenet import WaveNetModel, AudioReader, optimizer_factory, audio_reader, 
 
 BATCH_SIZE = 1
 # DATA_DIRECTORY = './VCTK-Corpus'
-DATA_DIRECTORY = "./data/"
+DATA_DIRECTORY = "./data"
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 1000
 NUM_STEPS = int(1e3)
@@ -374,20 +374,22 @@ def main():
     # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     # reader.start_threads(sess)
 
-    training_log_file = open(DATA_DIRECTORY + "training_log.txt", "w")
-    validation_log_file = open(DATA_DIRECTORY + "validation_log.txt", "w")
+    training_log_file = open(args.data_dir + "/training_log.txt", "w")
+    validation_log_file = open(args.data_dir + "/validation_log.txt", "w")
+
+    training_logs = []
+    validation_log = np.zeros((0))
 
     last_saved_step = saved_global_step
-
-
 
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
+            training_log = np.zeros((0))
 
-            """ epoch without conditioning"""
+            """ training without conditioning"""
             num_video_frames = []
-            training_data = audio_reader.load_audio_without_downloading(DATA_DIRECTORY, SAMPLE_RATE, "training", num_video_frames)
+            training_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training", num_video_frames)
             # pad = np.zeros((512, net.receptive_field))
             frame_index = 1
 
@@ -403,19 +405,23 @@ def main():
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+
+                    training_log = np.append(training_log, loss_value)
+
                     training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)\n'
                       .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
                 frame_index += 1
 
-                if frame_index == 11 and isDebug:
+                if frame_index == 21 and isDebug:
                     break
 
+            training_logs.append(training_log)
 
             """validation and generation"""
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
-                validation_data = audio_reader.load_audio_without_downloading(DATA_DIRECTORY, SAMPLE_RATE, "validation", num_video_frames)
+                validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training", num_video_frames)
                 validation_score = 0
                 # pad = np.zeros((512, net.receptive_field))
                 frame_index = 1
@@ -445,17 +451,18 @@ def main():
                         print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
                     frame_index += 1
 
-                    if frame_index == 10 and isDebug:
+                    if frame_index == 20 and isDebug:
                         break
 
                 print('epoch {:d} - validation = {:.3f}'
                       .format(epoch, sum(validation_score)))
                 validation_log_file.write('epoch {:d} - validation = {:.3f}\n'.format(epoch, sum(validation_score)))
+                validation_log = np.append(validation_log, sum(validation_score))
 
                 if len(waveform) > 0:
                     decode = mu_law_decode(audio_placeholder_validation, wavenet_params['quantization_channels'])
                     out = sess.run(decode, feed_dict={audio_placeholder_validation: waveform})
-                    write_wav(out, wavenet_params['sample_rate'], DATA_DIRECTORY + "epoch_" + str(epoch) + ".wav")
+                    write_wav(out, wavenet_params['sample_rate'], args.data_dir + "/epoch_" + str(epoch) + ".wav")
 
             if epoch % args.checkpoint_every == 0:
                 save(saver, sess, logdir, epoch)
@@ -468,6 +475,11 @@ def main():
     finally:
         validation_log_file.close()
         training_log_file.close()
+
+        training_logs = np.asarray(training_logs)
+        np.save(args.data_dir + "/training_log", training_logs)
+        np.save(args.data_dir + "/validation_log", validation_log)
+
         if epoch > last_saved_step:
             save(saver, sess, logdir, epoch)
         # coord.request_stop()
