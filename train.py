@@ -413,13 +413,13 @@ def main():
             #     duration = time.time() - start_time
             #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
             #           .format(epoch, loss_value, duration))
-            LSTM_length = 10
+
 
             """ epoch """
             num_video_frames = []
             training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", LSTM_length, num_video_frames)
-            pad = np.zeros((net.receptive_field, LSTM_length, 512))
+                                                                                        reader.i2v, "training", args.lstm_len, num_video_frames)
+            pad = np.zeros((net.receptive_field, args.lstm_len, 512))
             frame_index = 1
 
             for audio, video_vectors in training_data:

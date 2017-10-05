@@ -522,6 +522,7 @@ class WaveNetModel(object):
 
         local_condition_batch = tf.matmul(lstm_output[:,0,:], lstm_output_weight) + lstm_output_bias
         print("here here")
+        print(local_condition_batch)
         print(local_condition_batch.shape)
         print(local_condition_batch.shape[0])
         print(local_condition_batch.shape[1])
