@@ -77,7 +77,6 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
 
     audio, _ = librosa.load(directory + video_name +".wav", sr=sample_rate, mono=True)
     audio = audio.reshape(-1, 1)
-    # i2v = image2vector([32, 18, 3])
 
     sample_size = int(sample_rate / clip.fps + 0.5)
 
@@ -88,7 +87,7 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
     if num_video_frames is not None:
         num_video_frames.append(num_frames)
 
-    """create an input matrix for LSTM"""
+    """ create an input matrix for LSTM """
 
     img_seq_matrix_2d = np.zeros((LSTM_length, 512))
 
@@ -102,8 +101,8 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         image_vector = image_vector.reshape(1, 512)
 
         # LSTM_input_length * length_of_img_vec
-        img_seq_matrix_2d[1:,:] = img_seq_matrix_2d[:-1,:]
-        img_seq_matrix_2d[0,:] = image_vector
+        img_seq_matrix_2d[:-1, :] = img_seq_matrix_2d[1:,:]
+        img_seq_matrix_2d[-1,:] = image_vector
 
         # sample_size * LSTM_input_length * length_of_img_vec
         img_seq_matrix_3d = np.tile(img_seq_matrix_2d, (sample_size,1,1))

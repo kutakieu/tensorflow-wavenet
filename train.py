@@ -118,7 +118,7 @@ def get_arguments():
                         help='Run this program to debug or not')
     parser.add_argument('--generate_every', type=int, default=5,
                         help='How many steps to calculate validation score and generate sound file after.')
-    parser.add_argument('--lstm_len', type=int, default=10,
+    parser.add_argument('--lstm_len', type=int, default=24,
                         help='The length of the input for the LSTM cell.')
     return parser.parse_args()
 
@@ -425,10 +425,11 @@ def main():
             for audio, video_vectors in training_data:
                 audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
                                'constant')
-                # pad the video vector
+                                # pad the video vector
                 video_vectors = np.concatenate((pad, video_vectors), axis=0)
-                # video_vectors = video_vectors.transpose()
                 video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1], video_vectors.shape[2])
+
+
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
                                                                     lc_placeholder_training: video_vectors})
 
@@ -449,22 +450,21 @@ def main():
                 print("calculating validation score...")
                 num_video_frames = []
                 validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", num_video_frames)
+                                                                                            reader.i2v, "validation", args.lstm_len, num_video_frames)
                 validation_score = 0
-                pad = np.zeros((512, net.receptive_field))
+                pad = np.zeros((net.receptive_field, args.lstm_len, 512))
                 frame_index = 1
                 waveform = []
-                prediction = None
 
                 for audio, video_vectors in validation_data:
 
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                                   'constant')
+                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
                     # pad the video vector
-                    video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                    video_vectors = video_vectors.transpose()
-                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
-                    # return the error and prediction at the same time
+                    video_vectors = np.concatenate((pad, video_vectors), axis=0)
+                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0],
+                                                          video_vectors.shape[1], video_vectors.shape[2])
+
+                    # return the validation score and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
                                                                         lc_placeholder_validation: video_vectors})
 

@@ -515,22 +515,19 @@ class WaveNetModel(object):
         lstm_output_weight = self.variables['lstm']['lstm_output_weight']
         lstm_output_bias = self.variables['lstm']['lstm_output_bias']
 
-        # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(256, forget_bias=1.0)
         lstm_cell = self.variables['lstm']['lstm_cell']
 
         lstm_output, _ = tf.nn.dynamic_rnn(lstm_cell, local_condition_batch[0], dtype=tf.float32)
 
-        local_condition_batch = tf.matmul(lstm_output[:,0,:], lstm_output_weight) + lstm_output_bias
-        print("here here")
-        print(local_condition_batch)
-        print(local_condition_batch.shape)
-        print(local_condition_batch.shape[0])
-        print(local_condition_batch.shape[1])
-        print(tf.shape(local_condition_batch))
+        local_condition_batch = tf.nn.relu(tf.matmul(lstm_output[:,0,:], lstm_output_weight) + lstm_output_bias)
+
         # local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
-        local_condition_batch = tf.reshape(local_condition_batch, [tf.shape(local_condition_batch)[0], 1, tf.shape(local_condition_batch)[1]])
-        print("here here")
-        print(local_condition_batch.shape)
+        local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
+
+        network_input_width = tf.shape(input_batch)[1]
+        local_condition_batch = tf.slice(local_condition_batch, [0, 0, 0],
+                                 [-1, network_input_width, -1])
+
         # added to adjust the shape
         if not isGeneration:
             out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
