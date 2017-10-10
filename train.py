@@ -324,6 +324,7 @@ def main():
     optim = optimizer.minimize(loss, var_list=trainable)
 
     """variables for validation"""
+    net.batch_size = 1
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, 512)) if lc_enabled else None
@@ -331,6 +332,7 @@ def main():
                     global_condition_batch=gc_placeholder_validation,
                     local_condition_batch = lc_placeholder_validation)
 
+    net.batch_size = 3
 
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
@@ -382,19 +384,39 @@ def main():
 
     last_saved_step = saved_global_step
 
+    num_video_frames = []
+    training_data = []
+    training_data.append(
+        audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training1", net.receptive_field,
+                                                    num_video_frames))
+    training_data.append(
+        audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training2", net.receptive_field,
+                                                    num_video_frames))
+    training_data.append(
+        audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training3", net.receptive_field,
+                                                    num_video_frames))
+    validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training",
+                                                                  net.receptive_field, num_video_frames)
+
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
             training_log = np.zeros((0))
 
             """ training without conditioning"""
-            num_video_frames = []
-            training_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training", num_video_frames)
+
             # pad = np.zeros((512, net.receptive_field))
             frame_index = 1
 
-            for audio in training_data:
-                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+            for index in range(len(training_data[0])):
+                audio = training_data[0][index]
+                # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio1 = training_data[1][index]
+                # audio1 = np.pad(audio1, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio2 = training_data[2][index]
+                # audio2 = np.pad(audio2, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio = np.vstack((audio,audio1))
+                audio = np.vstack((audio,audio2))
                 # pad the video vector
                 # video_vectors = np.concatenate((pad, video_vectors), axis=1)
                 # video_vectors = video_vectors.transpose()
@@ -420,8 +442,9 @@ def main():
             """validation and generation"""
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
+                net.batch_size = 1
                 num_video_frames = []
-                validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training", num_video_frames)
+
                 validation_score = 0
                 # pad = np.zeros((512, net.receptive_field))
                 frame_index = 1
@@ -430,7 +453,7 @@ def main():
 
                 for audio in validation_data:
 
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+                    # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
                     # pad the video vector
                     # video_vectors = np.concatenate((pad, video_vectors), axis=1)
                     # video_vectors = video_vectors.transpose()

@@ -72,7 +72,7 @@ def load_audio(directory, sample_rate, file_name):
     audio = audio.reshape(-1, 1)
     return audio
 
-def load_audio_without_downloading(directory, sample_rate, video_name, num_video_frames=None):
+def load_audio_without_downloading(directory, sample_rate, video_name, receptive_field, num_video_frames=None):
     """no conditioning training data generator"""
 
     # create or load a list of youtube videos (URL)
@@ -83,6 +83,7 @@ def load_audio_without_downloading(directory, sample_rate, video_name, num_video
 
     audio, _ = librosa.load(directory + video_name +".wav", sr=sample_rate, mono=True)
     audio = audio.reshape(-1, 1)
+    audio = np.pad(audio, [[receptive_field, 0], [0, 0]], 'constant')
     # i2v = image2vector([32, 18, 3])
 
     sample_size = int(sample_rate / clip.fps + 0.5)
@@ -94,6 +95,8 @@ def load_audio_without_downloading(directory, sample_rate, video_name, num_video
     if num_video_frames is not None:
         num_video_frames.append(num_frames)
 
+    res = []
+
     for i in range(num_frames):
         # img = Image.fromarray(clip.get_frame(i))
         # img.thumbnail([32, 18], Image.ANTIALIAS)
@@ -104,7 +107,13 @@ def load_audio_without_downloading(directory, sample_rate, video_name, num_video
         # image_vector = image_vector.reshape(512, 1)
         # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size]
+        new_audio_piece = audio[:receptive_field + sample_size]
+        # res.append(audio[i * sample_size: (i + 1) * sample_size])
+        res.append(new_audio_piece)
+        audio = audio[sample_size:]
+        # yield audio[i*sample_size : (i+1)*sample_size]
+    return res
+
 
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 
