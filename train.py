@@ -395,7 +395,7 @@ def main():
     training_data.append(
         audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training3", net.receptive_field,
                                                     num_video_frames))
-    validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training",
+    validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training1",
                                                                   net.receptive_field, num_video_frames)
 
     try:
