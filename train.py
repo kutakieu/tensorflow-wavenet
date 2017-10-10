@@ -312,7 +312,7 @@ def main():
     audio_placeholder_training = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_training = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_training = tf.placeholder(dtype=tf.float32,
-                                               shape=(net.batch_size, None, 512)) if lc_enabled else None
+                                               shape=(net.batch_size, 512)) if lc_enabled else None
     loss = net.loss(input_batch=audio_placeholder_training,
                     global_condition_batch=gc_placeholder_training,
                     local_condition_batch = lc_placeholder_training,
@@ -326,7 +326,7 @@ def main():
     """variables for validation"""
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
-    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, 512)) if lc_enabled else None
+    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, 512)) if lc_enabled else None
     validation = net.validation(input_batch=audio_placeholder_validation,
                     global_condition_batch=gc_placeholder_validation,
                     local_condition_batch = lc_placeholder_validation)
@@ -418,15 +418,15 @@ def main():
             pad = np.zeros((512, net.receptive_field))
             frame_index = 1
 
-            for audio, video_vectors in training_data:
+            for audio, video_vector in training_data:
                 audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
                                'constant')
                 # pad the video vector
-                video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                video_vectors = video_vectors.transpose()
-                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                # video_vectors = np.concatenate((pad, video_vectors), axis=1)
+                # video_vectors = video_vectors.transpose()
+                # video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
-                                                                    lc_placeholder_training: video_vectors})
+                                                                    lc_placeholder_training: video_vector})
 
                 duration = time.time() - start_time
                 if frame_index % 10 == 0:

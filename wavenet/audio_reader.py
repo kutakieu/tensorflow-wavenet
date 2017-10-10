@@ -96,9 +96,9 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         img = img.reshape((1, w, h, 3))
         image_vector = i2v.convert(img)
         image_vector = image_vector.reshape(512, 1)
-        image_vectors = np.tile(image_vector, sample_size)
+        # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size], image_vectors
+        yield audio[i*sample_size : (i+1)*sample_size], image_vector
 
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 

@@ -832,8 +832,8 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
-                                     [-1, network_input_width, -1])
+            # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            #                          [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
 
