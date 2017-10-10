@@ -443,7 +443,7 @@ def main():
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 net.batch_size = 1
-                num_video_frames = []
+                # num_video_frames = []
 
                 validation_score = 0
                 # pad = np.zeros((512, net.receptive_field))
