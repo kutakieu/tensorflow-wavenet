@@ -329,46 +329,60 @@ class WaveNetModel(object):
                                                  name="gc_gate")
 
         if local_condition_batch is not None:
-            # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
-            # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
-            if isGeneration:
-                local_condition_batch_filter = tf.reshape(
-                    local_condition_batch,
-                    [self.batch_size, 1, self.local_condition_channels])
-            else:
-                out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
-                local_condition_batch_filter = tf.slice(local_condition_batch,
-                                                        [0, 0, 0],
-                                                        [-1, out_width_filter, -1])
-
             weights_lc_filter = variables['lc_filtweights']
-            conv_filter = conv_filter + tf.nn.conv1d(
-                                                     local_condition_batch_filter,
-                                                     # lc_conv_filter,
+            conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
                                                      weights_lc_filter,
                                                      stride=1,
                                                      padding="SAME",
                                                      name="lc_filter")
-
-            if isGeneration:
-                 local_condition_batch_gate = tf.reshape(
-                    local_condition_batch,
-                    [self.batch_size, 1, self.local_condition_channels])
-            else:
-                out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
-                local_condition_batch_gate = tf.slice(local_condition_batch,
-                                                      [0, 0, 0],
-                                                      [-1, out_width_gate, -1])
-
-
             weights_lc_gate = variables['lc_gateweights']
-            conv_gate = conv_gate + tf.nn.conv1d(
-                                                 local_condition_batch_gate,
-                                                 # lc_conv_gate,
+            conv_gate = conv_gate + tf.nn.conv1d(local_condition_batch,
                                                  weights_lc_gate,
                                                  stride=1,
                                                  padding="SAME",
                                                  name="lc_gate")
+
+        # if local_condition_batch is not None:
+        #     # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
+        #     # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
+        #     if isGeneration:
+        #         local_condition_batch_filter = tf.reshape(
+        #             local_condition_batch,
+        #             [self.batch_size, 1, self.local_condition_channels])
+        #     else:
+        #         out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
+        #         local_condition_batch_filter = tf.slice(local_condition_batch,
+        #                                                 [0, 0, 0],
+        #                                                 [-1, out_width_filter, -1])
+        #
+        #     weights_lc_filter = variables['lc_filtweights']
+        #     conv_filter = conv_filter + tf.nn.conv1d(
+        #                                              local_condition_batch_filter,
+        #                                              # lc_conv_filter,
+        #                                              weights_lc_filter,
+        #                                              stride=1,
+        #                                              padding="SAME",
+        #                                              name="lc_filter")
+        #
+        #     if isGeneration:
+        #          local_condition_batch_gate = tf.reshape(
+        #             local_condition_batch,
+        #             [self.batch_size, 1, self.local_condition_channels])
+        #     else:
+        #         out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
+        #         local_condition_batch_gate = tf.slice(local_condition_batch,
+        #                                               [0, 0, 0],
+        #                                               [-1, out_width_gate, -1])
+        #
+        #
+        #     weights_lc_gate = variables['lc_gateweights']
+        #     conv_gate = conv_gate + tf.nn.conv1d(
+        #                                          local_condition_batch_gate,
+        #                                          # lc_conv_gate,
+        #                                          weights_lc_gate,
+        #                                          stride=1,
+        #                                          padding="SAME",
+        #                                          name="lc_gate")
 
         if self.use_biases:
             filter_bias = variables['filter_bias']
@@ -412,8 +426,9 @@ class WaveNetModel(object):
         # print("next step's input width = ")
         # print(tf.shape(transformed)[1])
         input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
-        if not isGeneration:
-            local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
+
+        # if not isGeneration:
+        #     local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
 
         return skip_contribution, input_batch + transformed, local_condition_batch
 
