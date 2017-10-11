@@ -328,6 +328,13 @@ class WaveNetModel(object):
                                                  padding="SAME",
                                                  name="gc_gate")
 
+        print("here")
+        print(local_condition_batch)
+        print(local_condition_batch.shape)
+
+        print("here")
+        print(conv_filter)
+        print(conv_filter.shape)
         if local_condition_batch is not None:
             weights_lc_filter = variables['lc_filtweights']
             conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
@@ -515,15 +522,15 @@ class WaveNetModel(object):
         current_layer = self._create_causal_layer(current_layer)
 
         # added to adjust the shape
-        if not isGeneration:
-            out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
-            local_condition_batch = tf.slice(local_condition_batch,
-                                             [0, 0, 0],
-                                             [-1, out_width, -1])
-
-            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
-        else:
-            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+        # if not isGeneration:
+        #     out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
+        #     local_condition_batch = tf.slice(local_condition_batch,
+        #                                      [0, 0, 0],
+        #                                      [-1, out_width, -1])
+        #
+        #     output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+        # else:
+        output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
