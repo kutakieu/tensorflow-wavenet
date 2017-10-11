@@ -387,15 +387,49 @@ def main():
 
             """ epoch """
             num_video_frames = []
-            training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", net.receptive_field, num_video_frames)
+            audio_lists = []
+            img_vec_lists = []
+            # training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+            #                                                                             reader.i2v, "training", net.receptive_field, num_video_frames)
+            audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                                                                                        reader.i2v, "training1", net.receptive_field, num_video_frames)
+            audio_lists.append(audio_list)
+            img_vec_lists.append(img_vec_list)
+            audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
+                                                                                                 SAMPLE_RATE,
+                                                                                                 reader.i2v, "training2",
+                                                                                                 net.receptive_field,
+                                                                                               num_video_frames)
+            audio_lists.append(audio_list)
+            img_vec_lists.append(img_vec_list)
+            audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
+                                                                                                 SAMPLE_RATE,
+                                                                                                 reader.i2v, "training3",
+                                                                                                 net.receptive_field,
+                                                                                                 num_video_frames)
+            audio_lists.append(audio_list)
+            img_vec_lists.append(img_vec_list)
 
             frame_index = 1
 
-            for audio, video_vector in training_data:
+            # for audio, video_vector in training_data:
+            for index in range(len(img_vec_list)):
+                audio = audio_lists[0][index]
+                img_vec = img_vec_lists[0][index]
+                # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio1 = audio_lists[1][index]
+                img_vec1 = img_vec_lists[1][index]
+                # audio1 = np.pad(audio1, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio2 = audio_lists[2][index]
+                img_vec2 = img_vec_lists[2][index]
+                # audio2 = np.pad(audio2, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio = np.vstack((audio, audio1))
+                audio = np.vstack((audio, audio2))
+                img_vec = np.vstack((img_vec, img_vec1))
+                img_vec = np.vstack((img_vec, img_vec2))
 
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
-                                                                    lc_placeholder_training: video_vector})
+                                                                    lc_placeholder_training: img_vec})
 
                 duration = time.time() - start_time
                 if frame_index % 10 == 0:
@@ -413,18 +447,22 @@ def main():
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
-                validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", net.receptive_field, num_video_frames)
+                # validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                #                                                                             reader.i2v, "validation", net.receptive_field, num_video_frames)
+
+                audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE, reader.i2v,
+                                                                                                     "validation", net.receptive_field, num_video_frames)
                 validation_score = 0
 
                 frame_index = 1
                 waveform = []
 
-                for audio, video_vectors in validation_data:
-
+                for index in range(len(img_vec_list)):
+                    audio = audio_lists[index]
+                    img_vec = img_vec_lists[index]
                     # return the error and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
-                                                                        lc_placeholder_validation: video_vectors})
+                                                                        lc_placeholder_validation: img_vec})
 
                     validation_score += validation_value
 

@@ -89,6 +89,9 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
     if num_video_frames is not None:
         num_video_frames.append(num_frames)
 
+    audio_list = []
+    img_vec_list = []
+
     for i in range(num_frames):
         img = Image.fromarray(clip.get_frame(i))
         img.thumbnail([32, 18], Image.ANTIALIAS)
@@ -99,7 +102,13 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         image_vector = image_vector.reshape(1,1,512)
         # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
-        yield audio[i*sample_size : (i+1)*sample_size], image_vector
+        # yield audio[i*sample_size : (i+1)*sample_size], image_vector
+        new_audio_piece = audio[:receptive_field + sample_size]
+        audio_list.append(new_audio_piece)
+        img_vec_list.append(image_vector)
+        audio = audio[sample_size:]
+
+    return audio_list, img_vec_list
 
 def load_generic_audio_video(directory, sample_rate, i2v, video_list, video_index):
 
