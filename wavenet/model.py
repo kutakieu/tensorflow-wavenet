@@ -328,13 +328,14 @@ class WaveNetModel(object):
                                                  padding="SAME",
                                                  name="gc_gate")
 
-        print("here")
-        print(local_condition_batch)
-        print(local_condition_batch.shape)
+        # print("here")
+        # print(local_condition_batch)
+        # print(local_condition_batch.shape)
+        #
+        # print("here")
+        # print(conv_filter)
+        # print(conv_filter.shape)
 
-        print("here")
-        print(conv_filter)
-        print(conv_filter.shape)
         if local_condition_batch is not None:
             weights_lc_filter = variables['lc_filtweights']
             conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
@@ -913,8 +914,8 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
-                                     [-1, network_input_width, -1])
+            # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
+            #                          [-1, network_input_width, -1])
             # lc_embedding = lc_embedding[:,3:,:]
 
 

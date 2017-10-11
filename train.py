@@ -312,7 +312,7 @@ def main():
     audio_placeholder_training = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_training = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_training = tf.placeholder(dtype=tf.float32,
-                                               shape=(net.batch_size, 512)) if lc_enabled else None
+                                               shape=(net.batch_size, 1, 512)) if lc_enabled else None
     loss = net.loss(input_batch=audio_placeholder_training,
                     global_condition_batch=gc_placeholder_training,
                     local_condition_batch = lc_placeholder_training,
@@ -326,7 +326,7 @@ def main():
     """variables for validation"""
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
-    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, 512)) if lc_enabled else None
+    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, 1, 512)) if lc_enabled else None
     validation = net.validation(input_batch=audio_placeholder_validation,
                     global_condition_batch=gc_placeholder_validation,
                     local_condition_batch = lc_placeholder_validation)
@@ -385,46 +385,15 @@ def main():
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
 
-            """ original code """
-            # if args.store_metadata and epoch % 500 == 0:
-            #     # Slow run that stores extra information for debugging.
-            #     print('Storing metadata')
-            #     run_options = tf.RunOptions(
-            #         trace_level=tf.RunOptions.FULL_TRACE)
-            #     summary, loss_value, _ = sess.run(
-            #         [summaries, loss, optim],
-            #         options=run_options,
-            #         run_metadata=run_metadata)
-            #     writer.add_summary(summary, epoch)
-            #     writer.add_run_metadata(run_metadata,
-            #                             'epoch{:04d}'.format(epoch))
-            #     tl = timeline.Timeline(run_metadata.step_stats)
-            #     timeline_path = os.path.join(logdir, 'timeline.trace')
-            #     with open(timeline_path, 'w') as f:
-            #         f.write(tl.generate_chrome_trace_format(show_memory=True))
-            #
-            # else:
-            #     summary, loss_value, _ = sess.run([summaries, loss, optim])
-            #     writer.add_summary(summary, epoch)
-            #
-            #     duration = time.time() - start_time
-            #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-            #           .format(epoch, loss_value, duration))
-
             """ epoch """
             num_video_frames = []
             training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", num_video_frames)
-            pad = np.zeros((512, net.receptive_field))
+                                                                                        reader.i2v, "training", net.receptive_field, num_video_frames)
+
             frame_index = 1
 
             for audio, video_vector in training_data:
-                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                               'constant')
-                # pad the video vector
-                # video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                # video_vectors = video_vectors.transpose()
-                # video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
                                                                     lc_placeholder_training: video_vector})
 
@@ -445,21 +414,14 @@ def main():
                 print("calculating validation score...")
                 num_video_frames = []
                 validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", num_video_frames)
+                                                                                            reader.i2v, "validation", net.receptive_field, num_video_frames)
                 validation_score = 0
-                pad = np.zeros((512, net.receptive_field))
+
                 frame_index = 1
                 waveform = []
-                prediction = None
 
                 for audio, video_vectors in validation_data:
 
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                                   'constant')
-                    # pad the video vector
-                    video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                    video_vectors = video_vectors.transpose()
-                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
                     # return the error and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
                                                                         lc_placeholder_validation: video_vectors})

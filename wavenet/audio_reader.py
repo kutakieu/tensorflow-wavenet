@@ -67,7 +67,7 @@ def load_generic_audio(directory, sample_rate):
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
-def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, num_video_frames=None):
+def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, video_name, receptive_field, num_video_frames=None):
 
     # create or load a list of youtube videos (URL)
     # this function gets called every time the model runs out the given training data
@@ -77,6 +77,7 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
 
     audio, _ = librosa.load(directory + video_name +".wav", sr=sample_rate, mono=True)
     audio = audio.reshape(-1, 1)
+    audio = np.pad(audio, [[receptive_field, 0], [0, 0]], 'constant')
     # i2v = image2vector([32, 18, 3])
 
     sample_size = int(sample_rate / clip.fps + 0.5)
@@ -95,7 +96,7 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         h, w = img.shape[0], img.shape[1]
         img = img.reshape((1, w, h, 3))
         image_vector = i2v.convert(img)
-        image_vector = image_vector.reshape(512, 1)
+        image_vector = image_vector.reshape(1,1,512)
         # image_vectors = np.tile(image_vector, sample_size)
         # yield a set of data for each frame and corresponding audio data
         yield audio[i*sample_size : (i+1)*sample_size], image_vector
