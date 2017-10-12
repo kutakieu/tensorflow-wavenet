@@ -284,28 +284,28 @@ def main():
                                                       EPSILON else None
         gc_enabled = args.gc_channels is not None
         lc_enabled = args.lc_channels is not None
-        reader = AudioReader(
-            args.data_dir,
-            coord,
-            sample_rate=wavenet_params['sample_rate'],
-            gc_enabled=gc_enabled,
-            lc_enabled=lc_enabled,
-            receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
-                                                                   wavenet_params["dilations"],
-                                                                   wavenet_params["scalar_input"],
-                                                                   wavenet_params["initial_filter_width"]),
-            sample_size=args.sample_size,
-            silence_threshold=silence_threshold)
-        audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
-            gc_id_batch = reader.dequeue_gc(args.batch_size)
-        else:
-            gc_id_batch = None
-
-        if lc_enabled:
-            lc_id_batch = reader.dequeue_lc(args.batch_size)
-        else:
-            lc_id_batch = None
+        # reader = AudioReader(
+        #     args.data_dir,
+        #     coord,
+        #     sample_rate=wavenet_params['sample_rate'],
+        #     gc_enabled=gc_enabled,
+        #     lc_enabled=lc_enabled,
+        #     receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
+        #                                                            wavenet_params["dilations"],
+        #                                                            wavenet_params["scalar_input"],
+        #                                                            wavenet_params["initial_filter_width"]),
+        #     sample_size=args.sample_size,
+        #     silence_threshold=silence_threshold)
+        # audio_batch = reader.dequeue(args.batch_size)
+        # if gc_enabled:
+        #     gc_id_batch = reader.dequeue_gc(args.batch_size)
+        # else:
+        #     gc_id_batch = None
+        #
+        # if lc_enabled:
+        #     lc_id_batch = reader.dequeue_lc(args.batch_size)
+        # else:
+        #     lc_id_batch = None
 
     # Create network.
     net = WaveNetModel(
@@ -321,7 +321,6 @@ def main():
         initial_filter_width=wavenet_params["initial_filter_width"],
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=reader.gc_category_cardinality,
         local_condition_channels=args.lc_channels)
 
     if args.l2_regularization_strength == 0:
