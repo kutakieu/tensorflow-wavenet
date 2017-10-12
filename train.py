@@ -451,16 +451,16 @@ def main():
     # exit()
 
 
-    with open('data/audio_lists_training.pkl', 'rb') as f1:
+    with open('pickle/audio_lists_training.pkl', 'rb') as f1:
         audio_lists_training = pickle.load(f1)
 
-    with open('data/img_vec_lists_training.pkl', 'rb') as f2:
+    with open('pickle/img_vec_lists_training.pkl', 'rb') as f2:
         img_vec_lists_training = pickle.load(f2)
 
-    with open('data/audio_lists_validation.pkl', 'rb') as f3:
+    with open('pickle/audio_lists_validation.pkl', 'rb') as f3:
         audio_lists_validation = pickle.load(f3)
 
-    with open('data/img_vec_lists_validation.pkl', 'rb') as f4:
+    with open('pickle/img_vec_lists_validation.pkl', 'rb') as f4:
         img_vec_lists_validation = pickle.load(f4)
 
     try:
