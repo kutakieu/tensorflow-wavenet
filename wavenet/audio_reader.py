@@ -91,6 +91,7 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
 
     audio_list = []
     img_vec_list = []
+    # print("in the function 1")
 
     for i in range(num_frames):
         img = Image.fromarray(clip.get_frame(i))
@@ -107,6 +108,7 @@ def load_generic_audio_video_without_downloading(directory, sample_rate, i2v, vi
         audio_list.append(new_audio_piece)
         img_vec_list.append(image_vector)
         audio = audio[sample_size:]
+        # print("in the function 2")
 
     return audio_list, img_vec_list
 
