@@ -309,13 +309,65 @@ def main():
         local_condition_channels=args.lc_channels,
         lstm_length=args.lstm_len)
 
+    audio_lists = []
+    img_vec_lists = []
+    num_video_frames = []
+
+    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                                                                                         reader.i2v, "validation",
+                                                                                         net.receptive_field,
+                                                                                         args.lstm_len,
+                                                                                         num_video_frames)
+
+    import pickle
+    with open('audio_list_validation_lstm.pkl', 'wb') as f1:
+        pickle.dump(audio_list, f1)
+
+    with open('img_vec_list_validation_lstm.pkl', 'wb') as f2:
+        pickle.dump(img_vec_list, f2)
+
+
+    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                                                                                         reader.i2v, "training1",
+                                                                                         net.receptive_field,
+                                                                                         args.lstm_len,
+                                                                                         num_video_frames)
+    print("first")
+    audio_lists.append(audio_list)
+    img_vec_lists.append(img_vec_list)
+    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
+                                                                                         SAMPLE_RATE,
+                                                                                         reader.i2v, "training2",
+                                                                                         net.receptive_field,
+                                                                                         args.lstm_len,
+                                                                                         num_video_frames)
+    print("second")
+    audio_lists.append(audio_list)
+    img_vec_lists.append(img_vec_list)
+    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
+                                                                                         SAMPLE_RATE,
+                                                                                         reader.i2v, "training3",
+                                                                                         net.receptive_field,
+                                                                                         args.lstm_len,
+                                                                                         num_video_frames)
+    audio_lists.append(audio_list)
+    img_vec_lists.append(img_vec_list)
+    with open('audio_list_training_lstm.pkl', 'wb') as f1:
+        pickle.dump(audio_lists, f1)
+
+    with open('img_vec_list_training_lstm.pkl', 'wb') as f2:
+        pickle.dump(img_vec_lists, f2)
+
+    exit()
+
+
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None
 
     audio_placeholder_training = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_training = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_training = tf.placeholder(dtype=tf.float32,
-                                               shape=(net.batch_size, None, net.lstm_length, 512)) if lc_enabled else None
+                                               shape=(net.batch_size, net.lstm_length, 512)) if lc_enabled else None
     loss = net.loss(input_batch=audio_placeholder_training,
                     global_condition_batch=gc_placeholder_training,
                     local_condition_batch = lc_placeholder_training,
@@ -327,12 +379,15 @@ def main():
     optim = optimizer.minimize(loss, var_list=trainable)
 
     """variables for validation"""
+    net.batch_size = 1
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
-    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, net.lstm_length, 512)) if lc_enabled else None
+    lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, net.lstm_length, 512)) if lc_enabled else None
     validation = net.validation(input_batch=audio_placeholder_validation,
                     global_condition_batch=gc_placeholder_validation,
                     local_condition_batch = lc_placeholder_validation)
+
+    net.batch_size = args.batch_size
 
 
     # Set up logging for TensorBoard.
@@ -388,47 +443,15 @@ def main():
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
 
-            """ original code """
-            # if args.store_metadata and epoch % 500 == 0:
-            #     # Slow run that stores extra information for debugging.
-            #     print('Storing metadata')
-            #     run_options = tf.RunOptions(
-            #         trace_level=tf.RunOptions.FULL_TRACE)
-            #     summary, loss_value, _ = sess.run(
-            #         [summaries, loss, optim],
-            #         options=run_options,
-            #         run_metadata=run_metadata)
-            #     writer.add_summary(summary, epoch)
-            #     writer.add_run_metadata(run_metadata,
-            #                             'epoch{:04d}'.format(epoch))
-            #     tl = timeline.Timeline(run_metadata.step_stats)
-            #     timeline_path = os.path.join(logdir, 'timeline.trace')
-            #     with open(timeline_path, 'w') as f:
-            #         f.write(tl.generate_chrome_trace_format(show_memory=True))
-            #
-            # else:
-            #     summary, loss_value, _ = sess.run([summaries, loss, optim])
-            #     writer.add_summary(summary, epoch)
-            #
-            #     duration = time.time() - start_time
-            #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-            #           .format(epoch, loss_value, duration))
-
-
-            """ epoch """
+            """ training """
+            net.batch_size = args.batch_size
             num_video_frames = []
             training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", args.lstm_len, num_video_frames)
-            pad = np.zeros((net.receptive_field, args.lstm_len, 512))
+                                                                                        reader.i2v, "training1", args.lstm_len, net.receptive_field, num_video_frames)
+
             frame_index = 1
 
             for audio, video_vectors in training_data:
-                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                               'constant')
-                                # pad the video vector
-                video_vectors = np.concatenate((pad, video_vectors), axis=0)
-                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1], video_vectors.shape[2])
-
 
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
                                                                     lc_placeholder_training: video_vectors})
@@ -448,21 +471,16 @@ def main():
             """validation and generation"""
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
+                net.batch_size = 1
                 num_video_frames = []
                 validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
                                                                                             reader.i2v, "validation", args.lstm_len, num_video_frames)
                 validation_score = 0
-                pad = np.zeros((net.receptive_field, args.lstm_len, 512))
+
                 frame_index = 1
                 waveform = []
 
                 for audio, video_vectors in validation_data:
-
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
-                    # pad the video vector
-                    video_vectors = np.concatenate((pad, video_vectors), axis=0)
-                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0],
-                                                          video_vectors.shape[1], video_vectors.shape[2])
 
                     # return the validation score and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,

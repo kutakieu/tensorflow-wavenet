@@ -161,7 +161,7 @@ class WaveNetModel(object):
                 layer = dict()
                 layer['lstm_output_weight'] = create_variable(
                     'lstm_output_weight',
-                    [256, 128])
+                    [256, self.local_condition_channels])
                 layer['lstm_output_bias'] = create_variable(
                     'lstm_output_bias',
                     [128])
@@ -341,46 +341,60 @@ class WaveNetModel(object):
                                                  name="gc_gate")
 
         if local_condition_batch is not None:
-            # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
-            # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
-            if isGeneration:
-                local_condition_batch_filter = tf.reshape(
-                    local_condition_batch,
-                    [self.batch_size, 1, self.local_condition_channels])
-            else:
-                out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
-                local_condition_batch_filter = tf.slice(local_condition_batch,
-                                                        [0, 0, 0],
-                                                        [-1, out_width_filter, -1])
-
             weights_lc_filter = variables['lc_filtweights']
-            conv_filter = conv_filter + tf.nn.conv1d(
-                                                     local_condition_batch_filter,
-                                                     # lc_conv_filter,
+            conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
                                                      weights_lc_filter,
                                                      stride=1,
                                                      padding="SAME",
                                                      name="lc_filter")
-
-            if isGeneration:
-                 local_condition_batch_gate = tf.reshape(
-                    local_condition_batch,
-                    [self.batch_size, 1, self.local_condition_channels])
-            else:
-                out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
-                local_condition_batch_gate = tf.slice(local_condition_batch,
-                                                      [0, 0, 0],
-                                                      [-1, out_width_gate, -1])
-
-
             weights_lc_gate = variables['lc_gateweights']
-            conv_gate = conv_gate + tf.nn.conv1d(
-                                                 local_condition_batch_gate,
-                                                 # lc_conv_gate,
+            conv_gate = conv_gate + tf.nn.conv1d(local_condition_batch,
                                                  weights_lc_gate,
                                                  stride=1,
                                                  padding="SAME",
                                                  name="lc_gate")
+
+        # if local_condition_batch is not None:
+        #     # lc_conv_filter = causal_conv(local_condition_batch, weights_filter, dilation)
+        #     # lc_conv_gate = causal_conv(local_condition_batch, weights_gate, dilation)
+        #     if isGeneration:
+        #         local_condition_batch_filter = tf.reshape(
+        #             local_condition_batch,
+        #             [self.batch_size, 1, self.local_condition_channels])
+        #     else:
+        #         out_width_filter = tf.shape(local_condition_batch)[1] - (tf.shape(weights_filter)[0] - 1) * dilation
+        #         local_condition_batch_filter = tf.slice(local_condition_batch,
+        #                                                 [0, 0, 0],
+        #                                                 [-1, out_width_filter, -1])
+        #
+        #     weights_lc_filter = variables['lc_filtweights']
+        #     conv_filter = conv_filter + tf.nn.conv1d(
+        #                                              local_condition_batch_filter,
+        #                                              # lc_conv_filter,
+        #                                              weights_lc_filter,
+        #                                              stride=1,
+        #                                              padding="SAME",
+        #                                              name="lc_filter")
+        #
+        #     if isGeneration:
+        #          local_condition_batch_gate = tf.reshape(
+        #             local_condition_batch,
+        #             [self.batch_size, 1, self.local_condition_channels])
+        #     else:
+        #         out_width_gate = tf.shape(local_condition_batch)[1] - (tf.shape(weights_gate)[0] - 1) * dilation
+        #         local_condition_batch_gate = tf.slice(local_condition_batch,
+        #                                               [0, 0, 0],
+        #                                               [-1, out_width_gate, -1])
+        #
+        #
+        #     weights_lc_gate = variables['lc_gateweights']
+        #     conv_gate = conv_gate + tf.nn.conv1d(
+        #                                          local_condition_batch_gate,
+        #                                          # lc_conv_gate,
+        #                                          weights_lc_gate,
+        #                                          stride=1,
+        #                                          padding="SAME",
+        #                                          name="lc_gate")
 
         if self.use_biases:
             filter_bias = variables['filter_bias']
@@ -517,27 +531,32 @@ class WaveNetModel(object):
 
         lstm_cell = self.variables['lstm']['lstm_cell']
 
-        lstm_output, _ = tf.nn.dynamic_rnn(lstm_cell, local_condition_batch[0], dtype=tf.float32)
+        lstm_output, _ = tf.nn.dynamic_rnn(lstm_cell, local_condition_batch, dtype=tf.float32)
 
-        local_condition_batch = tf.nn.relu(tf.matmul(lstm_output[:,0,:], lstm_output_weight) + lstm_output_bias)
+        local_condition_batch = tf.nn.relu(tf.matmul(lstm_output[:,-1,:], lstm_output_weight) + lstm_output_bias)
 
         # local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
-        local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
+        # local_condition_batch = tf.reshape(local_condition_batch, [1, tf.shape(local_condition_batch)[0], tf.shape(local_condition_batch)[1]])
+        local_condition_batch = tf.reshape(local_condition_batch, [self.batch_size, 1, self.local_condition_channels])
 
-        network_input_width = tf.shape(input_batch)[1]
-        local_condition_batch = tf.slice(local_condition_batch, [0, 0, 0],
-                                 [-1, network_input_width, -1])
+        # local_condition_batch = local_condition_batch.reshape(self.batch_size, 1, self.local_condition_channels)
+
+        # network_input_width = tf.shape(input_batch)[1]
+        # local_condition_batch = tf.slice(local_condition_batch, [0, 0, 0],
+        #                          [-1, network_input_width, -1])
 
         # added to adjust the shape
-        if not isGeneration:
-            out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
-            local_condition_batch = tf.slice(local_condition_batch,
-                                             [0, 0, 0],
-                                             [-1, out_width, -1])
+        # if not isGeneration:
+        #     out_width = tf.shape(local_condition_batch)[1] - (tf.shape(self.variables['causal_layer']['filter'])[0] - 1) * 1
+        #     local_condition_batch = tf.slice(local_condition_batch,
+        #                                      [0, 0, 0],
+        #                                      [-1, out_width, -1])
+        #
+        #     output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+        # else:
+        #     output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
 
-            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
-        else:
-            output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
+        output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
