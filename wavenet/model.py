@@ -438,8 +438,8 @@ class WaveNetModel(object):
         # print("next step's input width = ")
         # print(tf.shape(transformed)[1])
         input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
-        if not isGeneration:
-            local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
+        # if not isGeneration:
+        #     local_condition_batch = tf.slice(local_condition_batch, [0, input_cut, 0], [-1, -1, -1])
 
         return skip_contribution, input_batch + transformed, local_condition_batch
 

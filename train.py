@@ -431,9 +431,6 @@ def main():
                 img_vec = np.vstack((img_vec, img_vec1))
                 img_vec = np.vstack((img_vec, img_vec2))
 
-                print("here")
-                print(img_vec.shape)
-
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
                                                                     lc_placeholder_training: img_vec})
 
