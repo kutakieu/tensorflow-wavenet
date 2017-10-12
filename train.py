@@ -399,10 +399,10 @@ def main():
     # validation_data = audio_reader.load_audio_without_downloading(args.data_dir, SAMPLE_RATE, "/training1",
     #                                                               net.receptive_field, num_video_frames)
 
-    with open('data/audio_lists_training.pkl', 'rb') as f1:
+    with open('pickle/audio_lists_training.pkl', 'rb') as f1:
         audio_lists_training = pickle.load(f1)
 
-    with open('data/img_vec_lists_training.pkl', 'rb') as f2:
+    with open('pickle/img_vec_lists_training.pkl', 'rb') as f2:
         img_vec_lists_training = pickle.load(f2)
 
 
