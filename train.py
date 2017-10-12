@@ -15,6 +15,7 @@ import sys
 import time
 import numpy as np
 import librosa
+import pickle
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -268,28 +269,28 @@ def main():
                                                       EPSILON else None
         gc_enabled = args.gc_channels is not None
         lc_enabled = args.lc_channels is not None
-        reader = AudioReader(
-            args.data_dir,
-            coord,
-            sample_rate=wavenet_params['sample_rate'],
-            gc_enabled=gc_enabled,
-            lc_enabled=lc_enabled,
-            receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
-                                                                   wavenet_params["dilations"],
-                                                                   wavenet_params["scalar_input"],
-                                                                   wavenet_params["initial_filter_width"]),
-            sample_size=args.sample_size,
-            silence_threshold=silence_threshold)
-        audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
-            gc_id_batch = reader.dequeue_gc(args.batch_size)
-        else:
-            gc_id_batch = None
-
-        if lc_enabled:
-            lc_id_batch = reader.dequeue_lc(args.batch_size)
-        else:
-            lc_id_batch = None
+        # reader = AudioReader(
+        #     args.data_dir,
+        #     coord,
+        #     sample_rate=wavenet_params['sample_rate'],
+        #     gc_enabled=gc_enabled,
+        #     lc_enabled=lc_enabled,
+        #     receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
+        #                                                            wavenet_params["dilations"],
+        #                                                            wavenet_params["scalar_input"],
+        #                                                            wavenet_params["initial_filter_width"]),
+        #     sample_size=args.sample_size,
+        #     silence_threshold=silence_threshold)
+        # audio_batch = reader.dequeue(args.batch_size)
+        # if gc_enabled:
+        #     gc_id_batch = reader.dequeue_gc(args.batch_size)
+        # else:
+        #     gc_id_batch = None
+        #
+        # if lc_enabled:
+        #     lc_id_batch = reader.dequeue_lc(args.batch_size)
+        # else:
+        #     lc_id_batch = None
 
     # Create network.
     net = WaveNetModel(
@@ -305,60 +306,12 @@ def main():
         initial_filter_width=wavenet_params["initial_filter_width"],
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=reader.gc_category_cardinality,
+        # global_condition_cardinality=reader.gc_category_cardinality,
         local_condition_channels=args.lc_channels,
         lstm_length=args.lstm_len)
 
-    audio_lists = []
-    img_vec_lists = []
-    num_video_frames = []
-
-    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                         reader.i2v, "validation",
-                                                                                         net.receptive_field,
-                                                                                         args.lstm_len,
-                                                                                         num_video_frames)
-
-    import pickle
-    with open('audio_list_validation_lstm.pkl', 'wb') as f1:
-        pickle.dump(audio_list, f1)
-
-    with open('img_vec_list_validation_lstm.pkl', 'wb') as f2:
-        pickle.dump(img_vec_list, f2)
 
 
-    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                         reader.i2v, "training1",
-                                                                                         net.receptive_field,
-                                                                                         args.lstm_len,
-                                                                                         num_video_frames)
-    print("first")
-    audio_lists.append(audio_list)
-    img_vec_lists.append(img_vec_list)
-    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
-                                                                                         SAMPLE_RATE,
-                                                                                         reader.i2v, "training2",
-                                                                                         net.receptive_field,
-                                                                                         args.lstm_len,
-                                                                                         num_video_frames)
-    print("second")
-    audio_lists.append(audio_list)
-    img_vec_lists.append(img_vec_list)
-    audio_list, img_vec_list = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY,
-                                                                                         SAMPLE_RATE,
-                                                                                         reader.i2v, "training3",
-                                                                                         net.receptive_field,
-                                                                                         args.lstm_len,
-                                                                                         num_video_frames)
-    audio_lists.append(audio_list)
-    img_vec_lists.append(img_vec_list)
-    with open('audio_list_training_lstm.pkl', 'wb') as f1:
-        pickle.dump(audio_lists, f1)
-
-    with open('img_vec_list_training_lstm.pkl', 'wb') as f2:
-        pickle.dump(img_vec_lists, f2)
-
-    exit()
 
 
     if args.l2_regularization_strength == 0:
@@ -437,6 +390,18 @@ def main():
 
     last_saved_step = saved_global_step
 
+    with open('audio_lists_training.pkl', 'rb') as f1:
+        audio_lists_training = pickle.load(f1)
+
+    with open('img_vec_lists_training_lstm_5.pkl', 'rb') as f2:
+        img_vec_lists_training = pickle.load(f2)
+
+    with open('audio_lists_validation.pkl', 'rb') as f3:
+        audio_lists_validation = pickle.load(f3)
+
+    with open('img_vec_lists_validation_lstm_5.pkl', 'rb') as f4:
+        img_vec_lists_validation = pickle.load(f4)
+
 
 
     try:
@@ -445,23 +410,39 @@ def main():
 
             """ training """
             net.batch_size = args.batch_size
-            num_video_frames = []
-            training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training1", args.lstm_len, net.receptive_field, num_video_frames)
+            # num_video_frames = []
+            # training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+            #                                                                             reader.i2v, "training1", args.lstm_len, net.receptive_field, num_video_frames)
 
             frame_index = 1
 
-            for audio, video_vectors in training_data:
+            for index in range(len(img_vec_lists_training[0])):
+                audio = audio_lists_training[0][index]
+                img_vec = img_vec_lists_training[0][index]
+                # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio1 = audio_lists_training[1][index]
+                img_vec1 = img_vec_lists_training[1][index]
+                # audio1 = np.pad(audio1, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio2 = audio_lists_training[2][index]
+                img_vec2 = img_vec_lists_training[2][index]
+                # audio2 = np.pad(audio2, [[net.receptive_field, 0], [0, 0]], 'constant')
+                audio = np.vstack((audio, audio1))
+                audio = np.vstack((audio, audio2))
+                img_vec = np.vstack((img_vec, img_vec1))
+                img_vec = np.vstack((img_vec, img_vec2))
+
+                print("here")
+                print(img_vec.shape)
 
                 summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
-                                                                    lc_placeholder_training: video_vectors})
+                                                                    lc_placeholder_training: img_vec})
 
                 duration = time.time() - start_time
                 if frame_index % 10 == 0:
                     print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                      .format(epoch, frame_index, len(img_vec_lists_training[0]), loss_value, duration))
                     training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                      .format(epoch, frame_index, len(img_vec_lists_training[0]), loss_value, duration))
                 frame_index += 1
 
                 if frame_index == 11 and isDebug:
@@ -472,19 +453,20 @@ def main():
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 net.batch_size = 1
-                num_video_frames = []
-                validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", args.lstm_len, num_video_frames)
+                # num_video_frames = []
+                # validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                #                                                                             reader.i2v, "validation", args.lstm_len, num_video_frames)
                 validation_score = 0
 
                 frame_index = 1
                 waveform = []
 
-                for audio, video_vectors in validation_data:
-
+                for index in range(len(img_vec_lists_validation[0])):
+                    audio = audio_lists_validation[index]
+                    img_vec = img_vec_lists_validation[index]
                     # return the validation score and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
-                                                                        lc_placeholder_validation: video_vectors})
+                                                                        lc_placeholder_validation: img_vec})
 
                     validation_score += validation_value
 
@@ -496,7 +478,7 @@ def main():
 
                     if frame_index % 10 == 0:
                         # show the progress
-                        print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
+                        print('validation {:d}/{:d}'.format(frame_index, len(img_vec_lists_validation[0])))
                     frame_index += 1
 
                     if frame_index == 10 and isDebug:
