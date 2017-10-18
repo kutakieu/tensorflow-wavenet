@@ -268,28 +268,28 @@ def main():
                                                       EPSILON else None
         gc_enabled = args.gc_channels is not None
         lc_enabled = args.lc_channels is not None
-        reader = AudioReader(
-            args.data_dir,
-            coord,
-            sample_rate=wavenet_params['sample_rate'],
-            gc_enabled=gc_enabled,
-            lc_enabled=lc_enabled,
-            receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
-                                                                   wavenet_params["dilations"],
-                                                                   wavenet_params["scalar_input"],
-                                                                   wavenet_params["initial_filter_width"]),
-            sample_size=args.sample_size,
-            silence_threshold=silence_threshold)
-        audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
-            gc_id_batch = reader.dequeue_gc(args.batch_size)
-        else:
-            gc_id_batch = None
-
-        if lc_enabled:
-            lc_id_batch = reader.dequeue_lc(args.batch_size)
-        else:
-            lc_id_batch = None
+        # reader = AudioReader(
+        #     args.data_dir,
+        #     coord,
+        #     sample_rate=wavenet_params['sample_rate'],
+        #     gc_enabled=gc_enabled,
+        #     lc_enabled=lc_enabled,
+        #     receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
+        #                                                            wavenet_params["dilations"],
+        #                                                            wavenet_params["scalar_input"],
+        #                                                            wavenet_params["initial_filter_width"]),
+        #     sample_size=args.sample_size,
+        #     silence_threshold=silence_threshold)
+        # audio_batch = reader.dequeue(args.batch_size)
+        # if gc_enabled:
+        #     gc_id_batch = reader.dequeue_gc(args.batch_size)
+        # else:
+        #     gc_id_batch = None
+        #
+        # if lc_enabled:
+        #     lc_id_batch = reader.dequeue_lc(args.batch_size)
+        # else:
+        #     lc_id_batch = None
 
     # Create network.
     net = WaveNetModel(
@@ -305,7 +305,7 @@ def main():
         initial_filter_width=wavenet_params["initial_filter_width"],
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=reader.gc_category_cardinality,
+        # global_condition_cardinality=reader.gc_category_cardinality,
         local_condition_channels=args.lc_channels)
 
     if args.l2_regularization_strength == 0:
@@ -326,6 +326,7 @@ def main():
     optim = optimizer.minimize(loss, var_list=trainable)
 
     """variables for validation"""
+    net.batch_size = 1
     audio_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=None)
     gc_placeholder_validation = tf.placeholder(dtype=tf.int32) if gc_enabled else None
     lc_placeholder_validation = tf.placeholder(dtype=tf.float32, shape=(net.batch_size, None, 512)) if lc_enabled else None
@@ -404,38 +405,54 @@ def main():
             # training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
             #                                                                             reader.i2v, "training", num_video_frames)
             training_data_order = np.arange(6)
+            net.batch_size = 3
             random.shuffle(training_data_order)
+            print(training_data_order)
 
-            frame_index = 1
+
             for o in range(2):
+
+                video_matrix = np.zeros((net.batch_size, net.receptive_field+int(16000/25), 512))
+                frame_index = 1
                 for index in range(len(img_vec_lists_training[0])):
 
                     audio = audio_lists_training[training_data_order[o*3]][index]
+                    audio = audio.reshape(1,-1)
                     img_vec = img_vec_lists_training[training_data_order[o*3]][index]
+                    img_vecs = np.repeat(img_vec, int(16000/25), axis=1)
                     # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
                     audio1 = audio_lists_training[training_data_order[o*3+1]][index]
+                    audio1 = audio1.reshape(1, -1)
                     img_vec1 = img_vec_lists_training[training_data_order[o*3+1]][index]
+                    img_vecs1 = np.repeat(img_vec1, int(16000/25), axis=1)
                     # audio1 = np.pad(audio1, [[net.receptive_field, 0], [0, 0]], 'constant')
                     audio2 = audio_lists_training[training_data_order[o*3+2]][index]
+                    audio2 = audio2.reshape(1, -1)
                     img_vec2 = img_vec_lists_training[training_data_order[o*3+2]][index]
+                    img_vecs2 = np.repeat(img_vec2, int(16000/25), axis=1)
                     # audio2 = np.pad(audio2, [[net.receptive_field, 0], [0, 0]], 'constant')
                     audio = np.vstack((audio, audio1))
                     audio = np.vstack((audio, audio2))
-                    img_vec = np.vstack((img_vec, img_vec1))
-                    img_vec = np.vstack((img_vec, img_vec2))
+                    img_vecs = np.vstack((img_vecs, img_vecs1))
+                    img_vecs = np.vstack((img_vecs, img_vecs2))
+
+                    video_matrix[:, :-int(16000/25), :] = video_matrix[:, int(16000/25):, :]
+                    video_matrix[:, -int(16000/25):, :] = img_vecs
+                    # print(audio.shape)
+                    # print(video_matrix.shape)
 
                     summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
-                                                                        lc_placeholder_training: img_vec})
+                                                                        lc_placeholder_training: video_matrix})
 
                     duration = time.time() - start_time
                     if frame_index % 10 == 0:
                         print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-                          .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                          .format(epoch, frame_index, len(img_vec_lists_training[0]), loss_value, duration))
                         training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)\n'
-                          .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                          .format(epoch, frame_index, len(img_vec_lists_training[0]), loss_value, duration))
                     frame_index += 1
 
-                    if frame_index == 11 and isDebug:
+                    if frame_index == 2 and isDebug:
                         break
 
 
@@ -443,22 +460,25 @@ def main():
             if epoch % args.generate_every == 0:
                 print("calculating validation score...")
                 num_video_frames = []
-                validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                            reader.i2v, "validation", num_video_frames)
+                # validation_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+                #                                                                             reader.i2v, "validation", num_video_frames)
                 validation_score = 0
-                pad = np.zeros((512, net.receptive_field))
+                # pad = np.zeros((512, net.receptive_field))
                 frame_index = 1
                 waveform = []
-                prediction = None
+                # prediction = None
 
                 net.batch_size = 1
+                video_matrix = np.zeros((net.batch_size, net.receptive_field + int(16000 / 25), 512))
 
                 for index in range(len(img_vec_lists_validation)):
                     audio = audio_lists_validation[index]
                     img_vec = img_vec_lists_validation[index]
+                    video_matrix[:, :-int(16000 / 25), :] = video_matrix[:, int(16000 / 25):, :]
+                    video_matrix[:, -int(16000 / 25):, :] = img_vec
                     # return the error and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
-                                                                        lc_placeholder_validation: img_vec})
+                                                                        lc_placeholder_validation: video_matrix})
 
                     validation_score += validation_value
 
@@ -470,7 +490,7 @@ def main():
 
                     if frame_index % 10 == 0:
                         # show the progress
-                        print('validation {:d}/{:d}'.format(frame_index, num_video_frames[0]))
+                        print('validation {:d}/{:d}'.format(frame_index, len(img_vec_lists_training[0])))
                     frame_index += 1
 
                     if frame_index == 10 and isDebug:
