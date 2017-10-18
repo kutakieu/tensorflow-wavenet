@@ -15,6 +15,8 @@ import sys
 import time
 import numpy as np
 import librosa
+import pickle
+import random
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
@@ -379,65 +381,62 @@ def main():
 
     last_saved_step = saved_global_step
 
+    with open('pickle/audio_lists_training_x_6.pkl', 'rb') as f1:
+        audio_lists_training = pickle.load(f1)
+
+    with open('pickle/img_vec_lists_training_x_6.pkl', 'rb') as f2:
+        img_vec_lists_training = pickle.load(f2)
+
+    with open('pickle/audio_lists_validation.pkl', 'rb') as f3:
+        audio_lists_validation = pickle.load(f3)
+
+    with open('pickle/img_vec_lists_validation.pkl', 'rb') as f4:
+        img_vec_lists_validation = pickle.load(f4)
+
 
 
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
 
-            """ original code """
-            # if args.store_metadata and epoch % 500 == 0:
-            #     # Slow run that stores extra information for debugging.
-            #     print('Storing metadata')
-            #     run_options = tf.RunOptions(
-            #         trace_level=tf.RunOptions.FULL_TRACE)
-            #     summary, loss_value, _ = sess.run(
-            #         [summaries, loss, optim],
-            #         options=run_options,
-            #         run_metadata=run_metadata)
-            #     writer.add_summary(summary, epoch)
-            #     writer.add_run_metadata(run_metadata,
-            #                             'epoch{:04d}'.format(epoch))
-            #     tl = timeline.Timeline(run_metadata.step_stats)
-            #     timeline_path = os.path.join(logdir, 'timeline.trace')
-            #     with open(timeline_path, 'w') as f:
-            #         f.write(tl.generate_chrome_trace_format(show_memory=True))
-            #
-            # else:
-            #     summary, loss_value, _ = sess.run([summaries, loss, optim])
-            #     writer.add_summary(summary, epoch)
-            #
-            #     duration = time.time() - start_time
-            #     print('epoch {:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-            #           .format(epoch, loss_value, duration))
-
-            """ epoch """
+            """ training """
             num_video_frames = []
-            training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
-                                                                                        reader.i2v, "training", num_video_frames)
-            pad = np.zeros((512, net.receptive_field))
+            # training_data = audio_reader.load_generic_audio_video_without_downloading(DATA_DIRECTORY, SAMPLE_RATE,
+            #                                                                             reader.i2v, "training", num_video_frames)
+            training_data_order = np.arange(6)
+            random.shuffle(training_data_order)
+
             frame_index = 1
+            for o in range(2):
+                for index in range(len(img_vec_lists_training[0])):
 
-            for audio, video_vectors in training_data:
-                audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                               'constant')
-                # pad the video vector
-                video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                video_vectors = video_vectors.transpose()
-                video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
-                summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
-                                                                    lc_placeholder_training: video_vectors})
+                    audio = audio_lists_training[training_data_order[o*3]][index]
+                    img_vec = img_vec_lists_training[training_data_order[o*3]][index]
+                    # audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+                    audio1 = audio_lists_training[training_data_order[o*3+1]][index]
+                    img_vec1 = img_vec_lists_training[training_data_order[o*3+1]][index]
+                    # audio1 = np.pad(audio1, [[net.receptive_field, 0], [0, 0]], 'constant')
+                    audio2 = audio_lists_training[training_data_order[o*3+2]][index]
+                    img_vec2 = img_vec_lists_training[training_data_order[o*3+2]][index]
+                    # audio2 = np.pad(audio2, [[net.receptive_field, 0], [0, 0]], 'constant')
+                    audio = np.vstack((audio, audio1))
+                    audio = np.vstack((audio, audio2))
+                    img_vec = np.vstack((img_vec, img_vec1))
+                    img_vec = np.vstack((img_vec, img_vec2))
 
-                duration = time.time() - start_time
-                if frame_index % 10 == 0:
-                    print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
-                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
-                    training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)\n'
-                      .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
-                frame_index += 1
+                    summary, loss_value, _ = sess.run([summaries, loss, optim], feed_dict={audio_placeholder_training: audio,
+                                                                        lc_placeholder_training: img_vec})
 
-                if frame_index == 11 and isDebug:
-                    break
+                    duration = time.time() - start_time
+                    if frame_index % 10 == 0:
+                        print('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)'
+                          .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                        training_log_file.write('epoch {:d}, frame_index {:d}/{:d} - loss = {:.3f}, ({:.3f} sec/epoch)\n'
+                          .format(epoch, frame_index, num_video_frames[0], loss_value, duration))
+                    frame_index += 1
+
+                    if frame_index == 11 and isDebug:
+                        break
 
 
             """validation and generation"""
@@ -452,17 +451,14 @@ def main():
                 waveform = []
                 prediction = None
 
-                for audio, video_vectors in validation_data:
+                net.batch_size = 1
 
-                    audio = np.pad(audio, [[net.receptive_field, 0], [0, 0]],
-                                   'constant')
-                    # pad the video vector
-                    video_vectors = np.concatenate((pad, video_vectors), axis=1)
-                    video_vectors = video_vectors.transpose()
-                    video_vectors = video_vectors.reshape(net.batch_size, video_vectors.shape[0], video_vectors.shape[1])
+                for index in range(len(img_vec_lists_validation)):
+                    audio = audio_lists_validation[index]
+                    img_vec = img_vec_lists_validation[index]
                     # return the error and prediction at the same time
                     validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
-                                                                        lc_placeholder_validation: video_vectors})
+                                                                        lc_placeholder_validation: img_vec})
 
                     validation_score += validation_value
 
