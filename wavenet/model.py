@@ -728,11 +728,11 @@ class WaveNetModel(object):
                                         self.local_condition_channels))
             embedding = local_condition
 
-        # if embedding is not None:
-        #     embedding = tf.reshape(
-        #         embedding,
-        #         # [self.batch_size, 1, self.local_condition_channels])
-        #         [self.batch_size, int(len), self.local_condition_channels])
+        if embedding is not None:
+            embedding = tf.reshape(
+                embedding,
+                [self.batch_size, 1, self.local_condition_channels])
+                # [self.batch_size, int(len), self.local_condition_channels])
         return embedding
 
     def predict_proba(self, waveform, global_condition=None, local_condition=None, isTest=False, name='wavenet'):
