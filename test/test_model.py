@@ -767,9 +767,9 @@ class TestNet(tf.test.TestCase):
                     # feed_dict, speaker_index, audio, gc, lc = CreateTrainingFeedDict(
                     #     audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, i)
                     # [results] = sess.run([operations], feed_dict=feed_dict)
-                    if i % 10 == 0:
-                        print("i: %d loss: %f" % (i, results[0]))
-                        error_list.append(error_total/len(duration_list))
+                if i % 10 == 0:
+                    print("i: %d loss: %f" % (i, results[0]))
+                    error_list.append(error_total/len(duration_list))
 
                 if i % 10 == 0:
                     self.net.batch_size=1
@@ -989,7 +989,7 @@ class TestNetWithLocalConditioning(TestNet):
         self.training_data_noisy = False
         self.generate_two_waves = False
 
-        self.train_iters = 101
+        self.train_iters = 1001
 
 
         self.net = WaveNetModel(batch_size=3,
