@@ -8,6 +8,7 @@ import os
 import matplotlib.pyplot as plt
 import librosa
 from scipy import signal
+import pickle
 
 from wavenet import (WaveNetModel, time_to_batch, batch_to_time, causal_conv,
                      optimizer_factory, mu_law_decode, image2vector)
@@ -711,9 +712,11 @@ class TestNet(tf.test.TestCase):
         loss = self.net.loss(input_batch=audio_placeholder,
                              global_condition_batch=gc_placeholder,
                              local_condition_batch=lc_placeholder)
-        validation = self.net.validation(input_batch=audio_placeholder,
-                             global_condition_batch=gc_placeholder,
-                             local_condition_batch=lc_placeholder)
+        self.net.batch_size = 1
+        validation = self.net.loss(input_batch=audio_placeholder,
+                                   global_condition_batch=gc_placeholder,
+                                   local_condition_batch=lc_placeholder)
+        self.net.batch_size = 3
         optimizer = optimizer_factory[self.optimizer_type](
                       learning_rate=self.learning_rate, momentum=self.momentum)
         trainable = tf.trainable_variables()
@@ -724,7 +727,7 @@ class TestNet(tf.test.TestCase):
         max_allowed_loss = 0.1
         loss_val = max_allowed_loss
         initial_loss = None
-        operations = [loss, optim, validation]
+        operations = [loss, optim]
         with self.test_session() as sess:
             # feed_dict, speaker_index, audio, gc, lc  = CreateTrainingFeedDict(
             #     audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, 0)
@@ -740,6 +743,28 @@ class TestNet(tf.test.TestCase):
 
             _gc = np.zeros(3)
 
+            """validation data"""
+            lc_1 = np.full(900, 1)
+            lc_2 = np.full(900, 2)
+            lc_3 = np.full(900, 3)
+            val_lc = np.zeros((1, 900))
+            val_lc[0, :300] = lc_1[:300]
+            val_lc[0, 300:600] = lc_2[300:600]
+            val_lc[0, 600:] = lc_3[600:900]
+            val_lc = np.pad(val_lc, ((0, 0), (receptive_field - 1, 0)), 'constant')
+            sample_period = 1.0 / SAMPLE_RATE_HZ
+            times = np.arange(0.0, SAMPLE_DURATION, sample_period)
+            note1 = 0.6 * np.sin(times * 2.0 * np.pi * F1)
+            note2 = 0.5 * np.sin(times * 2.0 * np.pi * F2)
+            note3 = 0.4 * np.sin(times * 2.0 * np.pi * F3)
+            val_audio = np.zeros((1, 900))
+            val_audio[0, :300] = note1[:300]
+            val_audio[0, 300:600] = note2[300:600]
+            val_audio[0, 600:] = note3[600:900]
+            val_audio = np.pad(val_audio, ((0, 0), (receptive_field - 1, 0)), 'constant')
+            val_list = []
+            error_list = []
+
             for i in range(self.train_iters):
                 # for lc_index in range(3):
                 #     current_audio = audio[:, int(lc_index * (waveform_size / 3)): int(
@@ -751,12 +776,13 @@ class TestNet(tf.test.TestCase):
                 #     [results] = sess.run([operations],
                 #                          feed_dict={audio_placeholder: current_audio, lc_placeholder: current_lc,
                 #                                     gc_placeholder: gc})
-
+                self.net.batch_size = 3
                 a = 0
                 current_audio = audio[i % 10]
                 current_lc = lc[i % 10]
                 duration_list = duration_lists[i % 10]
                 start_time = 0
+                error_total = 0
                 for duration in duration_list:
                     _audio = current_audio[:, start_time:duration+receptive_field]
                     _lc = current_lc[:, start_time:duration+receptive_field]
@@ -765,14 +791,30 @@ class TestNet(tf.test.TestCase):
                     [results] = sess.run([operations],
                                      feed_dict={audio_placeholder: _audio, lc_placeholder: _lc,
                                                 gc_placeholder: _gc})
+                    error_total += results[0]
                 # feed_dict, speaker_index, audio, gc, lc = CreateTrainingFeedDict(
                 #     audio, gc, lc, audio_placeholder, gc_placeholder, lc_placeholder, i)
                 # [results] = sess.run([operations], feed_dict=feed_dict)
-                    if i % 100 == 0:
-                        print("i: %d loss: %f" % (i, results[0]))
-                        print("i: %d validation: %f" % (i, results[0]))
+                if i % 10 == 0:
+                    print("i: %d loss: %f" % (i, results[0]))
+                    error_list.append(error_total / len(duration_list))
 
+                if i % 10 == 0:
+                    self.net.batch_size=1
+                    validation_score=0
+                    for i in range(3):
 
+                        validation_score += sess.run(validation, feed_dict={audio_placeholder: val_audio[:,300*i:300*(i+1)+receptive_field],
+                                                                            lc_placeholder: val_lc[:,300*i:300*(i+1)+receptive_field],
+                                                                                gc_placeholder: _gc[0]})
+                    val_list.append(validation_score/3)
+                    print("i: %d validation: %f" % (i, validation_score/3))
+
+            with open('complicated_error.pkl', 'wb') as f1:
+                pickle.dump(error_list, f1)
+
+            with open('complicated_validation.pkl', 'wb') as f2:
+                pickle.dump(val_list, f2)
             loss_val = results[0]
 
             # Sanity check the initial loss was larger.
@@ -974,7 +1016,7 @@ class TestNetWithLocalConditioning(TestNet):
         self.training_data_noisy = False
         self.generate_two_waves = False
 
-        self.train_iters = 1001
+        self.train_iters = 11
 
 
 
