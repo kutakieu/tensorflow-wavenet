@@ -809,7 +809,7 @@ class WaveNetModel(object):
              input_batch,
              global_condition_batch=None,
              local_condition_batch=None,
-             l2_regularization_strength=0.000005,
+             l2_regularization_strength=0.00005,
              name='wavenet'):
         '''Creates a WaveNet network and returns the autoencoding loss.
 
