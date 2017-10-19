@@ -220,9 +220,9 @@ def make_training_data(noisy=None, wave_type=None):
     notes = {0: [note0, lc_0], 1: [note1, lc_1], 2: [note2, lc_2], 3: [note3, lc_3]}
     duration_list = []
     while True:
-        _note1 = notes[random.randint(0, 3)]
-        _note2 = notes[random.randint(0, 3)]
-        _note3 = notes[random.randint(0, 3)]
+        _note1 = notes[random.randint(1, 3)]
+        _note2 = notes[random.randint(1, 3)]
+        _note3 = notes[random.randint(1, 3)]
         duration = random.randint(100, 300)
         if noisy is not None:
             noise = (np.random.rand(duration) * 2 - 1) / 10
@@ -407,6 +407,8 @@ def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
 
     waveform = [128] * net.receptive_field
 
+    _lc = np.zeros((1, net.receptive_field))
+
     # initial_lc = [0] * net.receptive_field if lc is not None else None
     if fast_generation:
         for sample in waveform[:-1]:
@@ -425,13 +427,15 @@ def generate_waveform(sess, net, fast_generation, gc, lc, samples_placeholder,
             window = waveform[-1]
             current_lc = lc[i] if lc is not None else None
         else:
+            _lc[:, :-1] = _lc[:, 1:]
             if len(waveform) > net.receptive_field:
                 window = waveform[-net.receptive_field:]
-                current_lc = lc[i] if lc is not None else None
+                _lc[:, -1] = lc[i] if lc is not None else None
             else:
                 window = waveform
                 # current_lc = initial_lc if lc is not None else None
-                current_lc = [0] if lc is not None else None
+                _lc[:, -1] = lc[i] if lc is not None else None
+            current_lc = _lc
             # current_lc = current_lc.reshape((1,))
             # print("current lc")
             # print(current_lc.shape)
@@ -827,7 +831,7 @@ class TestNet(tf.test.TestCase):
                             np.save("../data/wave_t", waveform)
 
                     generated_waveforms, ids = generate_waveforms(
-                        sess, self.net, False, np.array((0,)), lc)
+                        sess, self.net, False, np.array((0,)), lc[:,0])
 
                     for (waveform, id) in zip(generated_waveforms, ids):
                         # check_waveform(self.assertGreater, waveform, id[0])
@@ -985,7 +989,7 @@ class TestNetWithLocalConditioning(TestNet):
                                 skip_channels=256,
                                 global_condition_channels=NUM_SPEAKERS,
                                 global_condition_cardinality=NUM_SPEAKERS,
-                                local_condition_channels=128,
+                                local_condition_channels=256,
                                 local_condition_cardinality=NUM_SPEAKERS+1)
 
 if __name__ == '__main__':

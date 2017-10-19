@@ -735,7 +735,7 @@ class WaveNetModel(object):
             # lc_embedding = tf.slice(lc_embedding, [0, 0, 0],
             #                         [-1, network_input_width, -1])
 
-            raw_output = self._create_network(encoded, gc_embedding, lc_embedding, isGeneration=True)
+            raw_output = self._create_network(encoded, gc_embedding, lc_embedding, isGeneration=False)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
             if isTest:
                 return out
