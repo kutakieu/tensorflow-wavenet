@@ -463,6 +463,9 @@ def main():
     with open('pickle/img_vec_lists_validation.pkl', 'rb') as f4:
         img_vec_lists_validation = pickle.load(f4)
 
+    validation_audio = np.load("pickle/validation.npy")
+    validation_audio = np.pad(validation_audio, [[net.receptive_field, 0], [0, 0]], 'constant')
+
     try:
         for epoch in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
@@ -522,29 +525,33 @@ def main():
                 frame_index = 1
                 waveform = []
                 net.batch_size = 1
+                current_audio = np.zeros((1, int(16000/25) + net.receptive_field))
 
                 for index in range(len(img_vec_lists_validation)):
                     audio = audio_lists_validation[index]
                     img_vec = img_vec_lists_validation[index]
-                    # return the error and prediction at the same time
-                    validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
-                                                                        lc_placeholder_validation: img_vec})
+                    for audio_pos in range(int(16000/25)):
+                        current_audio[1,:] = validation_audio[]
 
-                    validation_score += validation_value
+                        # return the error and prediction at the same time
+                        validation_value, prediction = sess.run(validation, feed_dict={audio_placeholder_validation: audio,
+                                                                            lc_placeholder_validation: img_vec})
 
-                    if prediction is not None:
-                        for i in range(prediction.shape[0]):
-                            # generate a sample based on the predection
-                            sample = prediction2sample(prediction[i,:], 1.0, net.quantization_channels)
-                            waveform.append(sample)
+                        validation_score += validation_value
 
-                    if frame_index % 10 == 0:
-                        # show the progress
-                        print('validation {:d}/{:d}'.format(frame_index, len(img_vec_lists_validation)))
-                    frame_index += 1
+                        if prediction is not None:
+                            for i in range(prediction.shape[0]):
+                                # generate a sample based on the predection
+                                sample = prediction2sample(prediction[i,:], 1.0, net.quantization_channels)
+                                waveform.append(sample)
 
-                    if frame_index == 10 and isDebug:
-                        break
+                        if frame_index % 10 == 0:
+                            # show the progress
+                            print('validation {:d}/{:d}'.format(frame_index, len(img_vec_lists_validation)))
+                        frame_index += 1
+
+                        if frame_index == 10 and isDebug:
+                            break
 
                 print('epoch {:d} - validation = {:.3f}'
                       .format(epoch, sum(validation_score)))

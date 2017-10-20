@@ -888,6 +888,7 @@ class WaveNetModel(object):
              input_batch,
              global_condition_batch=None,
              local_condition_batch=None,
+             target_audio=None,
              name='wavenet'):
         with tf.name_scope(name):
             # We mu-law encode and quantize the input audioform.

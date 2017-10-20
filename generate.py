@@ -5,6 +5,7 @@ import argparse
 from datetime import datetime
 import json
 import os
+import pickle
 
 import librosa
 import numpy as np
@@ -39,7 +40,7 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description='WaveNet generation script')
     parser.add_argument(
-        'checkpoint', type=str, help='Which model checkpoint to generate from')
+        '--checkpoint', type=str, help='Which model checkpoint to generate from')
     parser.add_argument(
         '--samples',
         type=int,
@@ -237,13 +238,17 @@ def main():
     print("step 1")
 
     """create lc here"""
-    i2v = image2vector([32, 18, 3])
-    # frame_length is the number of samples for each video frame
-    lc, frame_length = generate_lc(".", 16000, i2v, args.samples)
-    current_lc = lc[0]
-    print("lc shape")
-    print(current_lc.shape)
-    print(frame_length)
+    # i2v = image2vector([32, 18, 3])
+    # # frame_length is the number of samples for each video frame
+    # lc, frame_length = generate_lc(".", 16000, i2v, args.samples)
+    # current_lc = lc[0]
+    # print("lc shape")
+    # print(current_lc.shape)
+    # print(frame_length)
+    with open('pickle/img_vec_lists_validation.pkl', 'rb') as f4:
+        lc = pickle.load(f4)
+
+    current_lc = np.zeros((net.local_condition_channels))
     if args.fast_generation and args.wav_seed:
     # if args.fast_generation:
         # When using the incremental generation, we need to
@@ -279,11 +284,13 @@ def main():
                 window = waveform
             outputs = [next_sample]
 
-        if step % frame_length == 0:
-            print(int(step/frame_length))
-            current_lc = lc[int(step/frame_length)]
+        # if step % frame_length == 0:
+        #     print(int(step/frame_length))
+        #     current_lc = lc[int(step/frame_length)]
+        current_lc = lc[int(step / 640)]
+
         # Run the WaveNet to predict the next sample.
-        prediction = sess.run(outputs, feed_dict={samples: window, lc_placeholder: current_lc})[0]
+        prediction = sess.run(outputs, feed_dict={samples: window, lc_placeholder: current_lc[0,0,:]})[0]
 
         # Scale prediction distribution using temperature.
         np.seterr(divide='ignore')

@@ -701,6 +701,7 @@ class TestNet(tf.test.TestCase):
         validation = self.net.loss(input_batch=audio_placeholder,
                              global_condition_batch=gc_placeholder,
                              local_condition_batch=lc_placeholder)
+
         self.net.batch_size = 3
         optimizer = optimizer_factory[self.optimizer_type](
                       learning_rate=self.learning_rate, momentum=self.momentum)
